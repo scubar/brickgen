@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  brickgen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: brickgen
+    ports:
+      - "8000:8000"
+    volumes:
+      - ldraw-data:/app/data/ldraw
+      - stl-cache:/app/cache
+      - database:/app/database
+    environment:
+      - REBRICKABLE_API_KEY=${REBRICKABLE_API_KEY:-}
+      - DEFAULT_PLATE_WIDTH=${DEFAULT_PLATE_WIDTH:-220}
+      - DEFAULT_PLATE_DEPTH=${DEFAULT_PLATE_DEPTH:-220}
+      - DEFAULT_PLATE_HEIGHT=${DEFAULT_PLATE_HEIGHT:-250}
+      - PART_SPACING=${PART_SPACING:-2}
+      - LDRAW_LIBRARY_PATH=/app/data/ldraw
+      - CACHE_DIR=/app/cache
+      - DATABASE_PATH=/app/database/brickgen.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ldraw-data:
+    driver: local
+  stl-cache:
+    driver: local
+  database:
+    driver: local

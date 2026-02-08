@@ -120,8 +120,8 @@ function SearchPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-        <h2 className="text-2xl font-bold mb-4">Search LEGO Sets</h2>
+      <div className="bg-dk-2 border border-dk-3 rounded-lg p-6 mb-8">
+        <h2 className="text-2xl font-bold mb-4 text-dk-5">Search LEGO Sets</h2>
         <form onSubmit={(e) => handleSearch(e, 1)} className="flex gap-2 relative" ref={suggestRef}>
           <div className="flex-1 relative">
             <input
@@ -130,18 +130,14 @@ function SearchPage() {
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => query && setShowSuggest(true)}
               placeholder="Enter set name or number..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full px-4 py-2 border border-dk-3 rounded-lg bg-dk-1 text-dk-5 placeholder-dk-4/60 focus:outline-none focus:ring-2 focus:ring-mint"
             />
             {showSuggest && suggestions.length > 0 && (
-              <ul className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+              <ul className="absolute z-10 top-full left-0 right-0 mt-1 bg-dk-2 border border-dk-3 rounded-lg shadow-lg max-h-60 overflow-auto">
                 {suggestions.map((s) => (
-                  <li
-                    key={s.set_num}
-                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-0"
-                    onMouseDown={() => pickSuggestion(s)}
-                  >
+                  <li key={s.set_num} className="px-4 py-2 hover:bg-dk-3 cursor-pointer border-b border-dk-3 last:border-0 text-dk-5" onMouseDown={() => pickSuggestion(s)}>
                     <span className="font-medium">{s.set_num}</span>
-                    <span className="text-gray-600 ml-2">{s.name}</span>
+                    <span className="ml-2 opacity-90">{s.name}</span>
                   </li>
                 ))}
               </ul>
@@ -150,7 +146,7 @@ function SearchPage() {
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 transition"
+            className="px-6 py-2 bg-mint text-dk-1 rounded-lg hover:opacity-90 disabled:opacity-50 transition"
           >
             {loading ? 'Searching...' : 'Search'}
           </button>
@@ -158,28 +154,12 @@ function SearchPage() {
 
         {searchHistory.length > 0 && (
           <div className="mt-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Recent searches</p>
+            <p className="text-sm font-medium text-dk-5 mb-2">Recent searches</p>
             <div className="flex flex-wrap gap-2">
               {searchHistory.map((q) => (
-                <span
-                  key={q}
-                  className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 rounded-full text-sm"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setQuery(q)}
-                    className="hover:underline"
-                  >
-                    {q}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeHistoryItem(q)}
-                    className="text-gray-600 hover:text-gray-800 font-bold"
-                    aria-label="Remove"
-                  >
-                    ×
-                  </button>
+                <span key={q} className="inline-flex items-center gap-1 px-3 py-1 bg-dk-3 rounded-full text-sm text-dk-5">
+                  <button type="button" onClick={() => setQuery(q)} className="hover:text-mint">{q}</button>
+                  <button type="button" onClick={() => removeHistoryItem(q)} className="hover:text-danger font-bold" aria-label="Remove">×</button>
                 </span>
               ))}
             </div>
@@ -187,7 +167,7 @@ function SearchPage() {
         )}
 
         {error && (
-          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
+          <div className="mt-4 p-3 bg-danger/20 text-danger rounded">
             Error: {error}
           </div>
         )}
@@ -200,63 +180,31 @@ function SearchPage() {
               <div
                 key={set.set_num}
                 onClick={() => navigate(`/set/${set.set_num}`, { state: { searchQuery: query, searchPage: page, pageSize } })}
-                className="bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg transition"
+                className="bg-dk-2 border border-dk-3 rounded-lg overflow-hidden cursor-pointer hover:border-mint/50 transition"
               >
-                {set.image_url && (
-                  <img
-                    src={set.image_url}
-                    alt={set.name}
-                    className="w-full h-48 object-contain bg-gray-50 p-4"
-                  />
-                )}
+                {set.image_url && <img src={set.image_url} alt={set.name} className="w-full h-48 object-contain bg-dk-1 p-4" />}
                 <div className="p-4">
-                  <h3 className="font-bold text-lg mb-1">{set.name}</h3>
-                  <p className="text-sm text-gray-600 mb-2">Set #{set.set_num}</p>
-                  {set.year && <p className="text-sm text-gray-500">Year: {set.year}</p>}
-                  {set.pieces && <p className="text-sm text-gray-500">Pieces: {set.pieces}</p>}
-                  {set.theme && <p className="text-sm text-gray-500">Theme: {set.theme}</p>}
+                  <h3 className="font-bold text-lg mb-1 text-dk-5">{set.name}</h3>
+                  <p className="text-sm text-dk-5/80 mb-2">Set #{set.set_num}</p>
+                  {set.year && <p className="text-sm text-dk-5/70">Year: {set.year}</p>}
+                  {set.pieces && <p className="text-sm text-dk-5/70">Pieces: {set.pieces}</p>}
+                  {set.theme && <p className="text-sm text-dk-5/70">Theme: {set.theme}</p>}
                 </div>
               </div>
             ))}
           </div>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-dk-5">
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-600">Items per page:</span>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  const newSize = Number(e.target.value)
-                  setPageSize(newSize)
-                  handleSearch(null, 1)
-                }}
-                className="border border-gray-300 rounded px-2 py-1"
-              >
-                {PAGE_SIZE_OPTIONS.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
+              <span>Items per page:</span>
+              <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); handleSearch(null, 1) }} className="border border-dk-3 rounded px-2 py-1 bg-dk-1 text-dk-5">
+                {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
             {(nextPage != null || prevPage != null) && (
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={prevPage == null}
-                  onClick={() => handleSearch(null, prevPage)}
-                  className="px-4 py-2 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-gray-600">
-                  Page {page} of {Math.max(1, Math.ceil(count / pageSize))} ({count} total)
-                </span>
-                <button
-                  type="button"
-                  disabled={nextPage == null}
-                  onClick={() => handleSearch(null, nextPage)}
-                  className="px-4 py-2 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
-                >
-                  Next
-                </button>
+                <button type="button" disabled={prevPage == null} onClick={() => handleSearch(null, prevPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Previous</button>
+                <span className="text-sm">Page {page} of {Math.max(1, Math.ceil(count / pageSize))} ({count} total)</span>
+                <button type="button" disabled={nextPage == null} onClick={() => handleSearch(null, nextPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Next</button>
               </div>
             )}
           </div>
@@ -264,7 +212,7 @@ function SearchPage() {
       )}
 
       {!loading && results.length === 0 && query && (
-        <div className="text-center text-gray-500 py-8">
+        <div className="text-center text-dk-5 py-8">
           No results found. Try a different search term.
         </div>
       )}

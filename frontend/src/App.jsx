@@ -9,7 +9,7 @@ import AttributionsPage from './pages/AttributionsPage'
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-gray-100 flex flex-col">
+      <div className="min-h-screen bg-dk-1 flex flex-col">
         <Header />
         <main className="container mx-auto px-4 py-8 flex-1">
           <Routes>
@@ -22,7 +22,7 @@ function App() {
             <Route path="/attributions" element={<AttributionsPage />} />
           </Routes>
         </main>
-        <footer className="border-t border-gray-200 bg-white mt-auto py-3 px-4 text-center text-sm text-gray-500">
+        <footer className="border-t border-dk-3 bg-dk-2 mt-auto py-3 px-4 text-center text-sm text-dk-5">
           This project is not compatible with LEGO&trade;. LEGO&trade; is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.
         </footer>
       </div>

@@ -143,13 +143,13 @@ function SettingsPage() {
   }
 
   if (loading) {
-    return <div className="text-center py-8">Loading...</div>
+    return <div className="text-center py-8 text-dk-5">Loading...</div>
   }
 
   const tabs = [
     { id: 'general', label: 'General' },
-    { id: 'build', label: 'Build & rotation' },
-    { id: 'cache', label: 'Cache' },
+    { id: 'parts', label: 'Part Placement and Scaling' },
+    { id: 'cache', label: 'Cache Management' },
   ]
 
   const selectTab = (id) => {
@@ -161,24 +161,19 @@ function SettingsPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <button
-        onClick={() => navigate('/')}
-        className="mb-4 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
-      >
+      <button onClick={() => navigate('/')} className="mb-4 px-4 py-2 bg-dk-3 text-dk-5 rounded hover:bg-mint hover:text-dk-1 transition">
         ← Back to Search
       </button>
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="border-b border-gray-200">
+      <div className="bg-dk-2 border border-dk-3 rounded-lg overflow-hidden">
+        <div className="border-b border-dk-3">
           <nav className="flex -mb-px">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => selectTab(tab.id)}
                 className={`flex-1 py-4 px-6 text-center border-b-2 font-medium text-sm transition ${
-                  activeTab === tab.id
-                    ? 'border-gray-700 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  activeTab === tab.id ? 'border-mint text-mint' : 'border-transparent text-dk-5 hover:text-mint hover:border-dk-3'
                 }`}
               >
                 {tab.label}
@@ -187,11 +182,9 @@ function SettingsPage() {
           </nav>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 text-dk-5">
           {message && (
-            <div className={`mb-4 p-3 rounded ${
-              message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-            }`}>
+            <div className={`mb-4 p-3 rounded ${message.type === 'success' ? 'bg-mint/20 text-mint' : 'bg-danger/20 text-danger'}`}>
               {message.text}
             </div>
           )}
@@ -200,7 +193,7 @@ function SettingsPage() {
           {activeTab === 'general' && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-xl font-bold mb-4">API Configuration</h2>
+                <h2 className="text-xl font-bold mb-4 text-dk-5">API Configuration</h2>
                 
                 <form onSubmit={handleSaveApiKey} className="space-y-4">
                   <div>
@@ -213,127 +206,113 @@ function SettingsPage() {
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
                         placeholder="Enter new API key (write-only)"
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-500"
+                        className="flex-1 px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5 focus:outline-none focus:ring-2 focus:ring-mint"
                       />
                       <button
                         type="submit"
                         disabled={savingApiKey || !apiKey.trim()}
-                        className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-400 transition font-semibold"
+                        className="px-6 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50 transition font-semibold"
                       >
                         {savingApiKey ? 'Updating...' : 'Update'}
                       </button>
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-dk-5/80 mt-1">
                       For security, the API key is never displayed. Enter a new key to update it.
                     </p>
                   </div>
                 </form>
               </div>
 
-              <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold mb-4">System Paths</h2>
-                
-                <div className="bg-gray-50 p-4 rounded space-y-3">
+              <div className="pt-6 border-t border-dk-3">
+                <h2 className="text-xl font-bold mb-4 text-dk-5">System Paths</h2>
+                <div className="bg-dk-1 p-4 rounded space-y-3">
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase">LDraw Library Path</p>
-                    <p className="text-sm font-mono text-gray-700">{envPaths.ldraw_library_path}</p>
+                    <p className="text-xs font-medium text-dk-5/80 uppercase">LDraw Library Path</p>
+                    <p className="text-sm font-mono text-dk-5">{envPaths.ldraw_library_path}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase">Cache Directory</p>
-                    <p className="text-sm font-mono text-gray-700">{envPaths.cache_dir}</p>
+                    <p className="text-xs font-medium text-dk-5/80 uppercase">Cache Directory</p>
+                    <p className="text-sm font-mono text-dk-5">{envPaths.cache_dir}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase">Database Path</p>
-                    <p className="text-sm font-mono text-gray-700">{envPaths.database_path}</p>
+                    <p className="text-xs font-medium text-dk-5/80 uppercase">Database Path</p>
+                    <p className="text-sm font-mono text-dk-5">{envPaths.database_path}</p>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">
+                  <p className="text-xs text-dk-5/70 mt-2">
                     These paths are configured via environment variables and cannot be changed at runtime.
                   </p>
                 </div>
               </div>
-
-              <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold mb-4">Cache management</h2>
-                <p className="text-sm text-gray-600 mb-3">Manage STL, Rebrickable, part preview, LDraw, and search history in the Cache tab.</p>
-                <button type="button" onClick={() => selectTab('cache')} className="inline-block px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">Open Cache tab</button>
-                <ul className="mt-2 text-sm text-gray-600 space-y-1">
-                  <li><a href="/settings/cache#stl-cache" className="text-gray-700 hover:underline">STL cache</a></li>
-                  <li><a href="/settings/cache#rebrickable-cache" className="text-gray-700 hover:underline">Rebrickable cache</a></li>
-                  <li><a href="/settings/cache#preview-cache" className="text-gray-700 hover:underline">Part preview cache</a></li>
-                  <li><a href="/settings/cache#ldraw-cache" className="text-gray-700 hover:underline">LDraw library</a></li>
-                  <li><a href="/settings/cache#search-history-cache" className="text-gray-700 hover:underline">Search history</a></li>
-                </ul>
-              </div>
             </div>
           )}
 
-          {/* Build & rotation Tab */}
-          {activeTab === 'build' && (
+          {/* Part Placement and Scaling Tab */}
+          {activeTab === 'parts' && (
             <div className="space-y-6">
               <form onSubmit={handleSaveSettings} className="space-y-6">
                 <div>
-                  <h2 className="text-xl font-bold mb-4">Build plate and spacing</h2>
+                  <h2 className="text-xl font-bold mb-4 text-dk-5">Build Plate Size and Part Spacing</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Plate width (mm)</label>
-                      <input type="number" value={settings.default_plate_width} onChange={(e) => handleChange('default_plate_width', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-gray-300 rounded" />
+                      <label className="block text-sm font-medium mb-1 text-dk-5">Plate width (mm)</label>
+                      <input type="number" value={settings.default_plate_width} onChange={(e) => handleChange('default_plate_width', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Plate depth (mm)</label>
-                      <input type="number" value={settings.default_plate_depth} onChange={(e) => handleChange('default_plate_depth', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-gray-300 rounded" />
+                      <label className="block text-sm font-medium mb-1 text-dk-5">Plate depth (mm)</label>
+                      <input type="number" value={settings.default_plate_depth} onChange={(e) => handleChange('default_plate_depth', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Plate height (mm)</label>
-                      <input type="number" value={settings.default_plate_height} onChange={(e) => handleChange('default_plate_height', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-gray-300 rounded" />
+                      <label className="block text-sm font-medium mb-1 text-dk-5">Plate height (mm)</label>
+                      <input type="number" value={settings.default_plate_height} onChange={(e) => handleChange('default_plate_height', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Part spacing (mm)</label>
-                      <input type="number" value={settings.part_spacing} onChange={(e) => handleChange('part_spacing', e.target.value)} min={1} max={10} className="w-full px-4 py-2 border border-gray-300 rounded" />
+                      <label className="block text-sm font-medium mb-1 text-dk-5">Part spacing (mm)</label>
+                      <input type="number" value={settings.part_spacing} onChange={(e) => handleChange('part_spacing', e.target.value)} min={1} max={10} className="w-full px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-6 border-t border-gray-200">
-                  <h2 className="text-xl font-bold mb-4">Rotation (X, Y, Z degrees)</h2>
-                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded mb-4">
+                <div className="pt-6 border-t border-dk-3">
+                  <h2 className="text-xl font-bold mb-4 text-dk-5">Part Rotation (X, Y, Z Degrees)</h2>
+                  <div className="flex items-center justify-between p-4 bg-dk-1 rounded mb-4">
                     <div>
-                      <label htmlFor="rotationEnabled" className="text-sm font-medium block mb-1">Enable rotation</label>
-                      <p className="text-xs text-gray-500">Apply the same rotation to all parts</p>
+                      <label htmlFor="rotationEnabled" className="text-sm font-medium block mb-1 text-dk-5">Enable rotation</label>
+                      <p className="text-xs text-dk-5/80">Apply the same rotation to all parts</p>
                     </div>
-                    <input type="checkbox" id="rotationEnabled" checked={settings.rotation_enabled} onChange={(e) => handleChange('rotation_enabled', e.target.checked)} className="w-6 h-6 text-gray-600 border-gray-300 rounded focus:ring-gray-500" />
+                    <input type="checkbox" id="rotationEnabled" checked={settings.rotation_enabled} onChange={(e) => handleChange('rotation_enabled', e.target.checked)} className="w-6 h-6 text-mint border-dk-3 rounded focus:ring-mint" />
                   </div>
                   {settings.rotation_enabled && (
                     <div className="grid grid-cols-3 gap-4 mb-4">
-                      <div><label className="block text-sm font-medium mb-1">X</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_x} onChange={(e) => handleChange('rotation_x', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded" /></div>
-                      <div><label className="block text-sm font-medium mb-1">Y</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_y} onChange={(e) => handleChange('rotation_y', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded" /></div>
-                      <div><label className="block text-sm font-medium mb-1">Z</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_z} onChange={(e) => handleChange('rotation_z', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded" /></div>
+                      <div><label className="block text-sm font-medium mb-1">X</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_x} onChange={(e) => handleChange('rotation_x', e.target.value)} className="w-full px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" /></div>
+                      <div><label className="block text-sm font-medium mb-1">Y</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_y} onChange={(e) => handleChange('rotation_y', e.target.value)} className="w-full px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" /></div>
+                      <div><label className="block text-sm font-medium mb-1">Z</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_z} onChange={(e) => handleChange('rotation_z', e.target.value)} className="w-full px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" /></div>
                     </div>
                   )}
-                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded">
+                  <div className="flex items-center justify-between p-4 bg-dk-1 rounded">
                     <div>
-                      <label htmlFor="matchPreview" className="text-sm font-medium block mb-1">Default orientation (match preview)</label>
-                      <p className="text-xs text-gray-500">When rotation is off, apply X=-90° so STL matches part preview (studs up).</p>
+                      <label htmlFor="matchPreview" className="text-sm font-medium block mb-1 text-dk-5">Default orientation (match preview)</label>
+                      <p className="text-xs text-dk-5/80">When rotation is off, apply X=-90° so STL matches part preview (studs up).</p>
                     </div>
-                    <input type="checkbox" id="matchPreview" checked={settings.default_orientation_match_preview !== false} onChange={(e) => handleChange('default_orientation_match_preview', e.target.checked)} className="w-6 h-6 text-gray-600 border-gray-300 rounded focus:ring-gray-500" />
+                    <input type="checkbox" id="matchPreview" checked={settings.default_orientation_match_preview !== false} onChange={(e) => handleChange('default_orientation_match_preview', e.target.checked)} className="w-6 h-6 text-mint border-dk-3 rounded focus:ring-mint" />
                   </div>
                 </div>
 
-                <div className="pt-6 border-t border-gray-200">
-                  <h2 className="text-xl font-bold mb-4">STL scale factor</h2>
-                  <input type="number" step="0.01" value={settings.stl_scale_factor} onChange={(e) => handleChange('stl_scale_factor', e.target.value)} min={0.01} max={100} className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded" />
-                  <p className="text-sm text-gray-500 mt-1">Default: 10 (LDView cm to mm). Calibration: part 3034 ≈ 16×64×3.2 mm. Changing clears STL cache.</p>
+                <div className="pt-6 border-t border-dk-3">
+                  <h2 className="text-xl font-bold mb-4 text-dk-5">STL Scaling</h2>
+                  <input type="number" step="0.01" value={settings.stl_scale_factor} onChange={(e) => handleChange('stl_scale_factor', e.target.value)} min={0.01} max={100} className="w-full max-w-xs px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
+                  <p className="text-sm text-dk-5/80 mt-1">Default: 10 (LDView cm to mm). Changing clears STL cache.</p>
                 </div>
 
-                <div className="pt-6 border-t border-gray-200">
-                  <h2 className="text-xl font-bold mb-4">Part previews</h2>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={settings.auto_generate_part_previews !== false} onChange={(e) => handleChange('auto_generate_part_previews', e.target.checked)} className="w-5 h-5 rounded border-gray-300 text-gray-600 focus:ring-gray-500" />
+                <div className="pt-6 border-t border-dk-3">
+                  <h2 className="text-xl font-bold mb-4 text-dk-5">Part previews</h2>
+                  <label className="flex items-center gap-2 cursor-pointer text-dk-5">
+                    <input type="checkbox" checked={settings.auto_generate_part_previews !== false} onChange={(e) => handleChange('auto_generate_part_previews', e.target.checked)} className="w-5 h-5 rounded border-dk-3 text-mint focus:ring-mint" />
                     <span>Auto-generate part previews</span>
                   </label>
-                  <p className="text-sm text-gray-500 mt-1"><a href="/settings/cache#preview-cache" className="text-gray-700 hover:underline">Manage part preview cache</a></p>
+                  <p className="text-sm text-dk-5/80 mt-1"><a href="/settings/cache#preview-cache" className="text-mint hover:underline">Manage part preview cache</a></p>
                 </div>
 
-                <button type="submit" disabled={saving} className="w-full px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 font-semibold">
+                <button type="submit" disabled={saving} className="w-full px-6 py-3 bg-mint text-dk-1 rounded-lg hover:opacity-90 disabled:opacity-50 font-semibold">
                   {saving ? 'Saving...' : 'Save settings'}
                 </button>
               </form>
@@ -343,7 +322,7 @@ function SettingsPage() {
           {/* Cache Tab */}
           {activeTab === 'cache' && (
             <div>
-              <p className="text-sm text-gray-600 mb-4">Manage STL, Rebrickable, part preview, LDraw, and search history caches.</p>
+              <p className="text-sm text-dk-5/80 mb-4">Manage STL, Rebrickable, part preview, LDraw, and search history caches.</p>
               <CacheManagementContent />
             </div>
           )}

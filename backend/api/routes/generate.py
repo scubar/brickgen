@@ -368,6 +368,24 @@ async def delete_job_files(job_id: str, db: Session = Depends(get_db)):
     return {"message": f"Deleted {out_file}" if deleted else "File was already missing", "deleted": deleted}
 
 
+@router.delete("/jobs/{job_id}")
+async def delete_job(job_id: str, db: Session = Depends(get_db)):
+    """Delete a job record and its output file (if any)."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.output_file:
+        path = settings.output_dir / job.output_file
+        if path.exists():
+            try:
+                path.unlink()
+            except Exception as e:
+                logger.warning(f"Could not delete job file {job.output_file}: {e}")
+    db.delete(job)
+    db.commit()
+    return {"message": f"Job {job_id} deleted"}
+
+
 @router.post("/jobs/{job_id}/rerun", response_model=JobStatus)
 async def rerun_job(
     job_id: str,

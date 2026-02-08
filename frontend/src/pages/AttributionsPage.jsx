@@ -13,16 +13,16 @@ function AttributionsPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <button onClick={() => navigate(-1)} className="mb-4 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">← Back</button>
-      <h1 className="text-2xl font-bold mb-6">Attributions</h1>
-      <p className="text-gray-600 mb-6">This product uses the following third-party software and services.</p>
+      <button onClick={() => navigate(-1)} className="mb-4 px-4 py-2 bg-dk-3 text-dk-5 rounded hover:bg-mint hover:text-dk-1 transition">← Back</button>
+      <h1 className="text-2xl font-bold mb-6 text-dk-5">Attributions</h1>
+      <p className="text-dk-5/80 mb-6">This product uses the following third-party software and services.</p>
       <ul className="space-y-4">
         {items.map((item) => (
-          <li key={item.name} className="bg-white rounded-lg shadow p-4">
-            <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline">
+          <li key={item.name} className="bg-dk-2 border border-dk-3 rounded-lg p-4">
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-mint hover:underline">
               {item.name}
             </a>
-            <p className="text-sm text-gray-600 mt-1">{item.description}</p>
+            <p className="text-sm text-dk-5/80 mt-1">{item.description}</p>
           </li>
         ))}
       </ul>

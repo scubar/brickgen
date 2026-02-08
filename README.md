@@ -19,7 +19,7 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 - SQLite for caching and job tracking
 - LDView CLI tool for LDraw → STL conversion
 - LDraw parts library (10,000+ LEGO parts)
-- Minimal dependencies: `aiohttp`, `sqlalchemy`, `pydantic`
+- Key dependencies: `fastapi`, `uvicorn`, `aiohttp`, `sqlalchemy`, `pydantic`, `numpy`, `numpy-stl`
 
 **Frontend:**
 - React 18 with Vite
@@ -100,10 +100,9 @@ PART_SPACING=2             # mm spacing between parts
 
 ### Common Printer Presets
 
-- **Prusa i3 MK3S**: 250 x 210 mm
-- **Ender 3/5**: 220 x 220 mm
-- **CR-10**: 300 x 300 mm
-- **Prusa Mini**: 180 x 180 mm
+
+- **Bambu Lab X1 Carbon**: 250mm^3
+- **Bambu Lab A1 Mini**: 180mm^3
 
 ## Development
 
@@ -115,17 +114,18 @@ PART_SPACING=2             # mm spacing between parts
 pip install --user pipenv
 ```
 
-**Backend:**
+**Backend:** (run from project root so the `backend` package resolves)
 ```bash
 cd backend
 pipenv install --dev
-pipenv run uvicorn backend.main:app --reload
+cd ..
+pipenv run --path backend uvicorn backend.main:app --reload
 ```
 
-Or activate the virtual environment:
+Or activate the virtual environment from project root:
 ```bash
-cd backend
-pipenv shell
+pipenv shell --path backend
+# from project root (brickgen/)
 uvicorn backend.main:app --reload
 ```
 
@@ -142,11 +142,13 @@ npm run dev
 brickgen/
 ├── backend/
 │   ├── api/
-│   │   ├── integrations/    # API clients (Brickset, Rebrickable, LDraw)
+│   │   ├── integrations/    # API clients (Rebrickable, LDraw)
 │   │   └── routes/          # FastAPI routes
 │   ├── core/                # Core processing logic
+│   │   ├── ldview_converter.py
 │   │   ├── stl_processing.py
-│   │   ├── plate_arranger.py
+│   │   ├── stl_orientation.py
+│   │   ├── stl_render.py
 │   │   └── threemf_generator.py
 │   ├── models/              # Pydantic schemas
 │   ├── config.py            # Configuration
@@ -166,9 +168,13 @@ brickgen/
 
 - `GET /api/search?query={name}` - Search LEGO sets
 - `GET /api/sets/{set_num}` - Get set details
-- `POST /api/generate` - Generate 3MF file
+- `POST /api/generate` - Generate 3MF/STL (legacy)
+- `GET /api/projects` - List projects
+- `POST /api/projects` - Create project
+- `GET /api/projects/{project_id}/jobs` - List jobs for a project
+- `POST /api/projects/{project_id}/jobs` - Create job (generate 3MF/STL)
 - `GET /api/jobs/{job_id}` - Check job status
-- `GET /api/download/{job_id}` - Download 3MF file
+- `GET /api/download/{job_id}` - Download 3MF or ZIP file
 - `GET /api/settings` - Get settings
 - `POST /api/settings` - Update settings
 - `GET /health` - Health check
@@ -201,22 +207,15 @@ Not all LDraw parts may convert successfully. The application will:
 
 ## Roadmap
 
-### Phase 2 - Polish
-- Improved STL conversion quality
-- Better build plate optimization algorithms
-- Enhanced error handling and validation
+### Phase 1 - Initial MVP (Done)
+- Provide a simple web interface that can be used to go from Rebrickable set to a zip file containing part STLs and/or 3mf file with part color info and bin packed placement.
 
-### Phase 3 - Enhancements
-- 3D preview in browser using Three.js
-- Multi-plate support for large sets
-- Part color information
-- Print settings recommendations
+### Phase 2 - Enhancements
+- Allow the import of full LDraw mpd files.
 
-### Phase 4 - Kubernetes Deployment
-- Complete Kubernetes manifests
-- Helm chart
-- Horizontal scaling with PostgreSQL
-- Redis job queue
+- Support external postgres database.
+
+- Quick import of users saved MOCs, Sets and Parts from Rebrickable.
 
 ## Contributing
 
@@ -229,8 +228,7 @@ MIT License - see LICENSE file for details
 ## Acknowledgments
 
 - [LDraw](https://www.ldraw.org/) - LEGO CAD parts library
-- [Brickset](https://brickset.com/) - LEGO set database
-- [Rebrickable](https://rebrickable.com/) - LEGO parts inventory data
+- [Rebrickable](https://rebrickable.com/) - LEGO set search and parts inventory
 - [lib3mf](https://github.com/3MFConsortium/lib3mf) - 3MF file format library
 
 ## Disclaimer

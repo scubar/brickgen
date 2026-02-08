@@ -19,6 +19,7 @@ numpy-stl = ">=3.0.0"
 [dev-packages]
 pytest = "*"
 pytest-asyncio = "*"
+httpx = ">=0.24,<0.27"
 black = "*"
 flake8 = "*"
 

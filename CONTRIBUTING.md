@@ -146,9 +146,10 @@ Example: `feat: add multi-plate support for large sets`
 
 ### Backend Tests
 
+From project root (using backend's Pipfile):
+
 ```bash
-cd backend
-pipenv run pytest
+pipenv run --path backend python -m pytest backend/tests -v
 ```
 
 ### Frontend Tests

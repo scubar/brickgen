@@ -1,0 +1,34 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pipenv
+        run: pip install pipenv
+
+      - name: Install dependencies
+        run: |
+          cd backend && pipenv install --dev --system --skip-lock
+
+      - name: Run backend tests
+        run: python -m pytest backend/tests -v --tb=short
+        env:
+          CACHE_DIR: ${{ runner.temp }}/brickgen_cache
+          LDRAW_LIBRARY_PATH: ${{ runner.temp }}/ldraw
+          DATABASE_PATH: ${{ runner.temp }}/brickgen.db
+          OUTPUT_DIR: ${{ runner.temp }}/outputs

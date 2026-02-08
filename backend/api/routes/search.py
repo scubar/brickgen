@@ -1,11 +1,12 @@
 """Search routes for LEGO sets."""
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from backend.models.schemas import SetSearchResult, SetDetail
 from backend.api.integrations.rebrickable import RebrickableClient
-from backend.database import get_db, CachedSet, CachedParts
+from backend.database import get_db, CachedSet, CachedParts, SearchHistory
 from datetime import datetime
 import json
 
@@ -13,52 +14,150 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/search", response_model=List[SetSearchResult])
+class SearchResponse(BaseModel):
+    results: List[SetSearchResult]
+    count: int
+    page: int
+    page_size: int
+    next: Optional[int] = None
+    previous: Optional[int] = None
+
+
+class SuggestItem(BaseModel):
+    set_num: str
+    name: str
+
+
+@router.get("/search", response_model=SearchResponse)
 async def search_sets(
     query: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
-    """Search for LEGO sets by name or number."""
+    """Search for LEGO sets by name or number. Returns paginated results."""
     try:
         client = RebrickableClient()
-        results = await client.search_sets(query, page, page_size)
-        
-        # Cache results
+        data = await client.search_sets(query, page, page_size)
+        results = data["results"]
+
         for result in results:
-            existing = db.query(CachedSet).filter(
-                CachedSet.set_num == result['set_num']
-            ).first()
-            
+            existing = db.query(CachedSet).filter(CachedSet.set_num == result["set_num"]).first()
             if existing:
                 existing.data = json.dumps(result)
-                existing.name = result.get('name', '')
-                existing.year = result.get('year')
-                existing.theme = result.get('theme')
-                existing.subtheme = result.get('subtheme')
-                existing.pieces = result.get('pieces')
-                existing.image_url = result.get('image_url')
+                existing.name = result.get("name", "")
+                existing.year = result.get("year")
+                existing.theme = result.get("theme")
+                existing.subtheme = result.get("subtheme")
+                existing.pieces = result.get("pieces")
+                existing.image_url = result.get("image_url")
             else:
                 cached = CachedSet(
-                    set_num=result['set_num'],
-                    name=result.get('name', ''),
-                    year=result.get('year'),
-                    theme=result.get('theme'),
-                    subtheme=result.get('subtheme'),
-                    pieces=result.get('pieces'),
-                    image_url=result.get('image_url'),
+                    set_num=result["set_num"],
+                    name=result.get("name", ""),
+                    year=result.get("year"),
+                    theme=result.get("theme"),
+                    subtheme=result.get("subtheme"),
+                    pieces=result.get("pieces"),
+                    image_url=result.get("image_url"),
                     data=json.dumps(result)
                 )
                 db.add(cached)
-        
+
+        # Record search history
+        hist = SearchHistory(query=query.strip().lower())
+        db.add(hist)
         db.commit()
-        
-        return [SetSearchResult(**r) for r in results]
-        
+
+        return SearchResponse(
+            results=[SetSearchResult(**r) for r in results],
+            count=data.get("count", len(results)),
+            page=data.get("page", page),
+            page_size=data.get("page_size", page_size),
+            next=data.get("next"),
+            previous=data.get("previous")
+        )
     except Exception as e:
         logger.error(f"Error searching sets: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/search/suggest", response_model=List[SuggestItem])
+async def search_suggest(
+    q: str = Query("", min_length=0),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db)
+):
+    """Predictive search from cache and search history only (no Rebrickable call)."""
+    if not q or not q.strip():
+        return []
+    q = q.strip().lower()
+    out = []
+    seen = set()
+
+    # From CachedSet: name or set_num contains q
+    cached = db.query(CachedSet).filter(
+        (CachedSet.name.ilike(f"%{q}%")) | (CachedSet.set_num.ilike(f"%{q}%"))
+    ).limit(limit).all()
+    for r in cached:
+        key = (r.set_num, r.name or "")
+        if key not in seen:
+            seen.add(key)
+            out.append(SuggestItem(set_num=r.set_num, name=r.name or ""))
+
+    # From search history: queries that start with or contain q
+    hist = db.query(SearchHistory.query).filter(
+        SearchHistory.query.ilike(f"%{q}%")
+    ).distinct().limit(limit).all()
+    for (h,) in hist:
+        if h and (h, h) not in seen and len(out) < limit:
+            # May not have set_num; only add if we have a CachedSet match for this query
+            c = db.query(CachedSet).filter(
+                (CachedSet.name.ilike(f"%{h}%")) | (CachedSet.set_num.ilike(f"%{h}%"))
+            ).first()
+            if c and ((c.set_num, c.name or "") not in seen):
+                seen.add((c.set_num, c.name or ""))
+                out.append(SuggestItem(set_num=c.set_num, name=c.name or ""))
+
+    return out[:limit]
+
+
+@router.get("/search/history", response_model=List[str])
+async def get_search_history(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """Return recent search queries (newest first)."""
+    rows = db.query(SearchHistory.query).order_by(
+        SearchHistory.created_at.desc()
+    ).distinct().limit(limit * 2).all()
+    seen = set()
+    out = []
+    for (q,) in rows:
+        if q and q not in seen and len(out) < limit:
+            seen.add(q)
+            out.append(q)
+    return out
+
+
+@router.delete("/search/history")
+async def clear_search_history_item(
+    query: str = Query(..., description="Exact query to remove"),
+    db: Session = Depends(get_db)
+):
+    """Remove one search history entry (by exact query)."""
+    db.query(SearchHistory).filter(SearchHistory.query == query).delete()
+    db.commit()
+    return {"message": f"Removed '{query}' from history"}
+
+
+@router.delete("/search/history/clear")
+async def clear_all_search_history(db: Session = Depends(get_db)):
+    """Clear all search history entries."""
+    count = db.query(SearchHistory).count()
+    db.query(SearchHistory).delete()
+    db.commit()
+    return {"message": f"Cleared {count} search history entry(ies)", "deleted_count": count}
 
 
 @router.get("/sets/{set_num}", response_model=SetDetail)
@@ -81,17 +180,15 @@ async def get_set_detail(
             except:
                 parts_count = cached.pieces
             
-            return SetDetail(**data, parts_count=parts_count)
+            cached_at = cached.updated_at.isoformat() if cached.updated_at else None
+            return SetDetail(**data, parts_count=parts_count, cached_at=cached_at)
         
         # Fetch from Rebrickable
         rebrickable_client = RebrickableClient()
-        
-        # Try to get set details from search endpoint
-        search_results = await rebrickable_client.search_sets(set_num, page_size=1)
-        
+        data = await rebrickable_client.search_sets(set_num, page=1, page_size=1)
+        search_results = data.get("results", [])
         if not search_results:
             raise HTTPException(status_code=404, detail="Set not found")
-        
         result = search_results[0]
         
         # Get parts count from Rebrickable (use same client)

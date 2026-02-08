@@ -7,7 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.config import settings
 from backend.database import init_db
-from backend.api.routes import search, generate, download, settings as settings_routes
+from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts
+from backend.version import __version__
 
 # Configure logging
 logging.basicConfig(
@@ -23,7 +24,7 @@ init_db()
 app = FastAPI(
     title="BrickGen API",
     description="LEGO set 3D printing file generator",
-    version="1.0.0"
+    version=__version__
 )
 
 # CORS middleware
@@ -40,6 +41,14 @@ app.include_router(search.router, prefix=settings.api_prefix, tags=["search"])
 app.include_router(generate.router, prefix=settings.api_prefix, tags=["generate"])
 app.include_router(download.router, prefix=settings.api_prefix, tags=["download"])
 app.include_router(settings_routes.router, prefix=settings.api_prefix, tags=["settings"])
+app.include_router(projects.router, prefix=settings.api_prefix, tags=["projects"])
+app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"])
+
+
+@app.get(f"{settings.api_prefix}/version")
+async def get_version():
+    """Return current BrickGen version (for job version comparison)."""
+    return {"version": __version__}
 
 
 @app.get("/health")

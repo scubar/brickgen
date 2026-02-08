@@ -9,19 +9,23 @@ logger = logging.getLogger(__name__)
 
 
 class STLOrienter:
-    """Optimize STL orientation to minimize support material for 3D printing."""
-    
-    def __init__(self, strategy: str = "studs_up"):
-        """Initialize orienter with strategy.
-        
-        Args:
-            strategy: "studs_up" (LEGO studs up, mating surface down - recommended),
-                     "flat" (lay largest flat surface down), 
-                     "minimize_supports" (minimize overhangs),
-                     "original" (no rotation)
-        """
+    """Apply absolute rotation (X, Y, Z degrees) to STL for 3D printing."""
+
+    def __init__(self, strategy: str = "original"):
+        """Initialize orienter. strategy kept for backward compat but unused; use apply_absolute_rotation."""
         self.strategy = strategy
-    
+
+    def apply_absolute_rotation(self, stl_path: Path, x_deg: float, y_deg: float, z_deg: float) -> bool:
+        """Apply rotation by Euler angles (X, Y, Z) in degrees. Order: X then Y then Z."""
+        if x_deg == 0 and y_deg == 0 and z_deg == 0:
+            return True
+        rx = self._rotation_matrix_x(x_deg)
+        ry = self._rotation_matrix_y(y_deg)
+        rz = self._rotation_matrix_z(z_deg)
+        # Compose: apply Z then Y then X (same as typical Euler ZYX)
+        rotation_matrix = rz @ ry @ rx
+        return self._apply_transformation(stl_path, rotation_matrix)
+
     def optimize_orientation(self, stl_path: Path) -> bool:
         """
         Analyze STL and rotate to optimal print orientation.

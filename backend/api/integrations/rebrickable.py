@@ -27,16 +27,11 @@ class RebrickableClient:
                 response.raise_for_status()
                 return await response.json()
     
-    async def search_sets(self, query: str, page: int = 1, page_size: int = 20) -> List[Dict]:
+    async def search_sets(self, query: str, page: int = 1, page_size: int = 20) -> Dict:
         """Search for LEGO sets by name or number.
         
-        Args:
-            query: Search term (set name or number)
-            page: Page number (1-indexed)
-            page_size: Results per page
-        
         Returns:
-            List of sets matching the query
+            Dict with results (list), count, next (page or None), previous (page or None)
         """
         try:
             params = {
@@ -44,20 +39,30 @@ class RebrickableClient:
                 "page": page,
                 "page_size": page_size
             }
-            
             result = await self._make_request("sets/", params)
             sets = result.get("results", [])
-            
-            return [{
-                "set_num": s.get("set_num", ""),
-                "name": s.get("name", ""),
-                "year": s.get("year"),
-                "theme": str(s.get("theme_id", "")),  # Theme ID as string for compatibility
-                "subtheme": None,  # Rebrickable doesn't have subtheme in search
-                "pieces": s.get("num_parts"),
-                "image_url": s.get("set_img_url")
-            } for s in sets]
-            
+            count = result.get("count", len(sets))
+            next_url = result.get("next")
+            previous_url = result.get("previous")
+            next_page = page + 1 if next_url else None
+            prev_page = page - 1 if previous_url and page > 1 else None
+
+            return {
+                "results": [{
+                    "set_num": s.get("set_num", ""),
+                    "name": s.get("name", ""),
+                    "year": s.get("year"),
+                    "theme": str(s.get("theme_id", "")),
+                    "subtheme": None,
+                    "pieces": s.get("num_parts"),
+                    "image_url": s.get("set_img_url")
+                } for s in sets],
+                "count": count,
+                "next": next_page,
+                "previous": prev_page,
+                "page": page,
+                "page_size": page_size
+            }
         except Exception as e:
             logger.error(f"Error searching sets: {e}")
             raise

@@ -1,12 +1,15 @@
 """Settings routes."""
 import logging
 import os
-from fastapi import APIRouter, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from backend.models.schemas import SettingsResponse, SettingsUpdate, CacheStats, LDrawCacheStats
 from backend.config import settings
 from backend.core.stl_processing import STLConverter
 from backend.api.integrations.ldraw import LDrawManager
+from backend.database import get_db, CachedSet, CachedParts
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -26,8 +29,12 @@ async def get_settings():
         default_plate_height=settings.default_plate_height,
         part_spacing=settings.part_spacing,
         stl_scale_factor=settings.stl_scale_factor,
-        auto_orient_enabled=settings.auto_orient_enabled,
-        orientation_strategy=settings.orientation_strategy
+        rotation_enabled=settings.rotation_enabled,
+        rotation_x=settings.rotation_x,
+        rotation_y=settings.rotation_y,
+        rotation_z=settings.rotation_z,
+        default_orientation_match_preview=settings.default_orientation_match_preview,
+        auto_generate_part_previews=settings.auto_generate_part_previews
     )
 
 
@@ -68,24 +75,35 @@ async def update_settings(update: SettingsUpdate):
     if update.part_spacing is not None:
         settings.part_spacing = update.part_spacing
     
-    if update.auto_orient_enabled is not None:
-        settings.auto_orient_enabled = update.auto_orient_enabled
-    
-    if update.orientation_strategy is not None:
-        if update.orientation_strategy in ["studs_up", "flat", "minimize_supports", "original"]:
-            # Clear cache if orientation strategy changes
-            if update.orientation_strategy != settings.orientation_strategy:
-                logger.info(f"Orientation strategy changed, clearing STL cache")
-                try:
-                    converter = STLConverter()
-                    deleted_count = converter.clear_cache()
-                    cache_cleared = True
-                    logger.info(f"Cleared {deleted_count} STL files due to orientation change")
-                except Exception as e:
-                    logger.error(f"Failed to clear cache after orientation change: {e}")
-            
-            settings.orientation_strategy = update.orientation_strategy
-    
+    if update.rotation_enabled is not None:
+        if update.rotation_enabled != settings.rotation_enabled:
+            try:
+                converter = STLConverter()
+                deleted_count = converter.clear_cache()
+                cache_cleared = True
+                logger.info(f"Cleared {deleted_count} STL files due to rotation change")
+            except Exception as e:
+                logger.error(f"Failed to clear cache after rotation change: {e}")
+        settings.rotation_enabled = update.rotation_enabled
+    if update.rotation_x is not None:
+        settings.rotation_x = update.rotation_x
+    if update.rotation_y is not None:
+        settings.rotation_y = update.rotation_y
+    if update.rotation_z is not None:
+        settings.rotation_z = update.rotation_z
+    if update.default_orientation_match_preview is not None:
+        if update.default_orientation_match_preview != settings.default_orientation_match_preview:
+            try:
+                converter = STLConverter()
+                deleted_count = converter.clear_cache()
+                cache_cleared = True
+                logger.info(f"Cleared {deleted_count} STL files due to default orientation change")
+            except Exception as e:
+                logger.error(f"Failed to clear cache after default orientation change: {e}")
+        settings.default_orientation_match_preview = update.default_orientation_match_preview
+    if update.auto_generate_part_previews is not None:
+        settings.auto_generate_part_previews = update.auto_generate_part_previews
+
     return {
         "settings": SettingsResponse(
             default_plate_width=settings.default_plate_width,
@@ -93,11 +111,81 @@ async def update_settings(update: SettingsUpdate):
             default_plate_height=settings.default_plate_height,
             part_spacing=settings.part_spacing,
             stl_scale_factor=settings.stl_scale_factor,
-            auto_orient_enabled=settings.auto_orient_enabled,
-            orientation_strategy=settings.orientation_strategy
+            rotation_enabled=settings.rotation_enabled,
+            rotation_x=settings.rotation_x,
+            rotation_y=settings.rotation_y,
+            rotation_z=settings.rotation_z,
+            default_orientation_match_preview=settings.default_orientation_match_preview,
+            auto_generate_part_previews=settings.auto_generate_part_previews
         ),
         "cache_cleared": cache_cleared
     }
+
+
+class CachedSetSummary(BaseModel):
+    """Cached set summary for Rebrickable cache list."""
+    set_num: str
+    name: str
+    cached_at: str  # updated_at ISO format
+    image_url: Optional[str] = None
+
+
+class RebrickableCacheList(BaseModel):
+    """Paginated list of cached sets."""
+    results: List[CachedSetSummary]
+    count: int
+    page: int
+    page_size: int
+    next: Optional[int] = None  # next page number or null
+    previous: Optional[int] = None  # previous page number or null
+
+
+@router.get("/cache/rebrickable", response_model=RebrickableCacheList)
+async def list_cached_sets(
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page")
+):
+    """List cached sets (Rebrickable cache) with set_num, name, cached_at. Paginated."""
+    q = db.query(CachedSet).order_by(CachedSet.updated_at.desc())
+    count = q.count()
+    offset = (page - 1) * page_size
+    rows = q.offset(offset).limit(page_size).all()
+    total_pages = (count + page_size - 1) // page_size if page_size else 0
+    return RebrickableCacheList(
+        results=[
+            CachedSetSummary(
+                set_num=r.set_num,
+                name=r.name or "",
+                cached_at=r.updated_at.isoformat() if r.updated_at else "",
+                image_url=r.image_url
+            )
+            for r in rows
+        ],
+        count=count,
+        page=page,
+        page_size=page_size,
+        next=page + 1 if page < total_pages else None,
+        previous=page - 1 if page > 1 else None
+    )
+
+
+@router.delete("/cache/rebrickable")
+async def clear_rebrickable_cache(
+    set_num: Optional[str] = Query(None, description="If set, clear only this set; otherwise clear all"),
+    db: Session = Depends(get_db)
+):
+    """Clear Rebrickable cache: all cached sets (and their parts) or a single set."""
+    if set_num:
+        deleted_sets = db.query(CachedSet).filter(CachedSet.set_num == set_num).delete()
+        deleted_parts = db.query(CachedParts).filter(CachedParts.set_num == set_num).delete()
+        db.commit()
+        return {"message": f"Cleared cache for set {set_num}", "sets": deleted_sets, "parts": deleted_parts}
+    else:
+        deleted_sets = db.query(CachedSet).delete()
+        deleted_parts = db.query(CachedParts).delete()
+        db.commit()
+        return {"message": "Cleared all Rebrickable cache", "sets": deleted_sets, "parts": deleted_parts}
 
 
 @router.get("/cache/stats", response_model=CacheStats)

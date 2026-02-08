@@ -13,6 +13,8 @@ sqlalchemy = "==2.0.25"
 aiosqlite = "==0.19.0"
 python-multipart = "==0.0.6"
 numpy = "==1.26.3"
+matplotlib = ">=3.7.0"
+numpy-stl = ">=3.0.0"
 
 [dev-packages]
 pytest = "*"

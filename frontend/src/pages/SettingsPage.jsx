@@ -1,17 +1,23 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
+import CacheManagementContent from '../components/CacheManagementContent'
 
 function SettingsPage() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('general')
+  const location = useLocation()
+  const [activeTab, setActiveTab] = useState(() => (typeof window !== 'undefined' && window.location.pathname === '/settings/cache' ? 'cache' : 'general'))
   const [settings, setSettings] = useState({
     default_plate_width: 220,
     default_plate_depth: 220,
     default_plate_height: 250,
     part_spacing: 2,
-    stl_scale_factor: 16.67,
-    auto_orient_enabled: true,
-    orientation_strategy: 'studs_up',
+    stl_scale_factor: 10,
+    rotation_enabled: false,
+    rotation_x: 0,
+    rotation_y: 0,
+    rotation_z: 0,
+    default_orientation_match_preview: true,
+    auto_generate_part_previews: true,
   })
   const [apiKey, setApiKey] = useState('')
   const [envPaths, setEnvPaths] = useState({
@@ -23,16 +29,12 @@ function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [savingApiKey, setSavingApiKey] = useState(false)
   const [message, setMessage] = useState(null)
-  const [cacheStats, setCacheStats] = useState(null)
-  const [clearingCache, setClearingCache] = useState(false)
-  const [ldrawStats, setLdrawStats] = useState(null)
-  const [clearingLdraw, setClearingLdraw] = useState(false)
-
   useEffect(() => {
     fetchSettings()
-    fetchCacheStats()
-    fetchLdrawStats()
   }, [])
+  useEffect(() => {
+    if (location.pathname === '/settings/cache') setActiveTab('cache')
+  }, [location.pathname])
 
   const fetchSettings = async () => {
     try {
@@ -45,84 +47,6 @@ function SettingsPage() {
       console.error('Failed to fetch settings:', err)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const fetchCacheStats = async () => {
-    try {
-      const response = await fetch('/api/cache/stats')
-      if (response.ok) {
-        const data = await response.json()
-        setCacheStats(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch cache stats:', err)
-    }
-  }
-
-  const fetchLdrawStats = async () => {
-    try {
-      const response = await fetch('/api/ldraw/stats')
-      if (response.ok) {
-        const data = await response.json()
-        setLdrawStats(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch LDraw stats:', err)
-    }
-  }
-
-  const handleClearCache = async () => {
-    if (!confirm('Are you sure you want to clear all cached STL files? This cannot be undone.')) {
-      return
-    }
-
-    setClearingCache(true)
-    setMessage(null)
-
-    try {
-      const response = await fetch('/api/cache/clear', {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setMessage({ type: 'success', text: data.message })
-        await fetchCacheStats()
-      } else {
-        throw new Error('Failed to clear cache')
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: err.message })
-    } finally {
-      setClearingCache(false)
-    }
-  }
-
-  const handleClearLdraw = async () => {
-    if (!confirm('Are you sure you want to clear the LDraw library? It will be re-downloaded (~40MB) on the next generation.')) {
-      return
-    }
-
-    setClearingLdraw(true)
-    setMessage(null)
-
-    try {
-      const response = await fetch('/api/ldraw/clear', {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setMessage({ type: 'success', text: data.message })
-        await fetchLdrawStats()
-      } else {
-        throw new Error('Failed to clear LDraw library')
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: err.message })
-    } finally {
-      setClearingLdraw(false)
     }
   }
 
@@ -155,8 +79,7 @@ function SettingsPage() {
       if (response.ok) {
         const data = await response.json()
         if (data.cache_cleared) {
-          setMessage({ type: 'success', text: 'Settings saved! STL cache was cleared due to scale change.' })
-          await fetchCacheStats()
+          setMessage({ type: 'success', text: 'Settings saved! STL cache was cleared due to scale or rotation change.' })
         } else {
           setMessage({ type: 'success', text: 'Settings saved successfully!' })
         }
@@ -203,12 +126,16 @@ function SettingsPage() {
     }
   }
 
+  const clampRotation = (v) => {
+    const n = parseFloat(v)
+    if (Number.isNaN(n)) return 0
+    return Math.max(-360, Math.min(360, n))
+  }
   const handleChange = (field, value) => {
-    if (field === 'stl_scale_factor') {
-      setSettings(prev => ({ ...prev, [field]: parseFloat(value) }))
-    } else if (field === 'auto_orient_enabled') {
-      setSettings(prev => ({ ...prev, [field]: value }))
-    } else if (field === 'orientation_strategy') {
+    if (['stl_scale_factor', 'rotation_x', 'rotation_y', 'rotation_z'].includes(field)) {
+      const val = field.startsWith('rotation_') ? clampRotation(value) : (parseFloat(value) || 0)
+      setSettings(prev => ({ ...prev, [field]: val }))
+    } else if (field === 'rotation_enabled' || field === 'auto_generate_part_previews' || field === 'default_orientation_match_preview') {
       setSettings(prev => ({ ...prev, [field]: value }))
     } else {
       setSettings(prev => ({ ...prev, [field]: parseInt(value) }))
@@ -220,11 +147,17 @@ function SettingsPage() {
   }
 
   const tabs = [
-    { id: 'general', label: 'General', icon: '⚙️' },
-    { id: 'orientation', label: 'Orientation', icon: '🔄' },
-    { id: 'stl', label: 'STL Processing', icon: '🔧' },
-    { id: 'ldraw', label: 'LDraw Library', icon: '📦' },
+    { id: 'general', label: 'General' },
+    { id: 'build', label: 'Build & rotation' },
+    { id: 'cache', label: 'Cache' },
   ]
+
+  const selectTab = (id) => {
+    setActiveTab(id)
+    setMessage(null)
+    if (id === 'cache') navigate('/settings/cache')
+    else navigate('/settings')
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -241,17 +174,13 @@ function SettingsPage() {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id)
-                  setMessage(null)
-                }}
+                onClick={() => selectTab(tab.id)}
                 className={`flex-1 py-4 px-6 text-center border-b-2 font-medium text-sm transition ${
                   activeTab === tab.id
-                    ? 'border-red-600 text-red-600'
+                    ? 'border-gray-700 text-gray-900'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
@@ -284,12 +213,12 @@ function SettingsPage() {
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
                         placeholder="Enter new API key (write-only)"
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-500"
                       />
                       <button
                         type="submit"
                         disabled={savingApiKey || !apiKey.trim()}
-                        className="px-6 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-gray-400 transition font-semibold"
+                        className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-400 transition font-semibold"
                       >
                         {savingApiKey ? 'Updating...' : 'Update'}
                       </button>
@@ -324,374 +253,98 @@ function SettingsPage() {
               </div>
 
               <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold mb-4">Printer Settings</h2>
-                
-                <form onSubmit={handleSaveSettings} className="space-y-6">
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Plate Width (mm)
-                      </label>
-                      <input
-                        type="number"
-                        value={settings.default_plate_width}
-                        onChange={(e) => handleChange('default_plate_width', e.target.value)}
-                        min="100"
-                        max="2000"
-                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Plate Depth (mm)
-                      </label>
-                      <input
-                        type="number"
-                        value={settings.default_plate_depth}
-                        onChange={(e) => handleChange('default_plate_depth', e.target.value)}
-                        min="100"
-                        max="2000"
-                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Plate Height (mm)
-                      </label>
-                      <input
-                        type="number"
-                        value={settings.default_plate_height}
-                        onChange={(e) => handleChange('default_plate_height', e.target.value)}
-                        min="100"
-                        max="2000"
-                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Part Spacing (mm)
-                      </label>
-                      <input
-                        type="number"
-                        value={settings.part_spacing}
-                        onChange={(e) => handleChange('part_spacing', e.target.value)}
-                        min="1"
-                        max="10"
-                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-blue-50 border border-blue-200 rounded p-4">
-                    <p className="text-sm font-medium text-blue-900 mb-2">Common Printer Presets</p>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-blue-800">
-                      <p>• Prusa i3 MK3S: 250 x 210 mm</p>
-                      <p>• Ender 3: 220 x 220 mm</p>
-                      <p>• Ender 5: 220 x 220 mm</p>
-                      <p>• CR-10: 300 x 300 mm</p>
-                      <p>• Prusa Mini: 180 x 180 mm</p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="w-full px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition font-semibold"
-                  >
-                    {saving ? 'Saving...' : 'Save Printer Settings'}
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Orientation Tab */}
-          {activeTab === 'orientation' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold mb-4">Auto-Orientation Settings</h2>
-                
-                <form onSubmit={handleSaveSettings} className="space-y-6">
-                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded">
-                    <div>
-                      <label htmlFor="autoOrientEnabled" className="text-sm font-medium block mb-1">
-                        Enable Auto-Orientation
-                      </label>
-                      <p className="text-xs text-gray-500">
-                        Automatically rotate parts for optimal 3D printing
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      id="autoOrientEnabled"
-                      checked={settings.auto_orient_enabled}
-                      onChange={(e) => handleChange('auto_orient_enabled', e.target.checked)}
-                      className="w-6 h-6 text-red-600 border-gray-300 rounded focus:ring-red-500"
-                    />
-                  </div>
-
-                  {settings.auto_orient_enabled && (
-                    <div>
-                      <label className="block text-sm font-medium mb-3">
-                        Orientation Strategy
-                      </label>
-                      <div className="space-y-3">
-                        <label className="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                          <input
-                            type="radio"
-                            name="orientationStrategy"
-                            value="studs_up"
-                            checked={settings.orientation_strategy === 'studs_up'}
-                            onChange={(e) => handleChange('orientation_strategy', e.target.value)}
-                            className="w-5 h-5 text-red-600 border-gray-300 focus:ring-red-500 mt-0.5"
-                          />
-                          <div className="ml-3">
-                            <span className="font-semibold text-gray-900">Studs Up (LEGO Optimized) ⭐</span>
-                            <p className="text-sm text-gray-600 mt-1">
-                              Orients LEGO bricks with studs pointing up and the flat mating surface on the build plate.
-                              Provides best bed adhesion and typically requires no supports. <strong>Recommended for all LEGO parts.</strong>
-                            </p>
-                          </div>
-                        </label>
-
-                        <label className="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                          <input
-                            type="radio"
-                            name="orientationStrategy"
-                            value="flat"
-                            checked={settings.orientation_strategy === 'flat'}
-                            onChange={(e) => handleChange('orientation_strategy', e.target.value)}
-                            className="w-5 h-5 text-red-600 border-gray-300 focus:ring-red-500 mt-0.5"
-                          />
-                          <div className="ml-3">
-                            <span className="font-semibold text-gray-900">Flat</span>
-                            <p className="text-sm text-gray-600 mt-1">
-                              Lays the smallest dimension vertically for maximum stability and contact area.
-                              Good for general parts but may not optimize for LEGO-specific geometry.
-                            </p>
-                          </div>
-                        </label>
-
-                        <label className="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                          <input
-                            type="radio"
-                            name="orientationStrategy"
-                            value="minimize_supports"
-                            checked={settings.orientation_strategy === 'minimize_supports'}
-                            onChange={(e) => handleChange('orientation_strategy', e.target.value)}
-                            className="w-5 h-5 text-red-600 border-gray-300 focus:ring-red-500 mt-0.5"
-                          />
-                          <div className="ml-3">
-                            <span className="font-semibold text-gray-900">Minimize Supports</span>
-                            <p className="text-sm text-gray-600 mt-1">
-                              Analyzes overhanging surfaces and chooses orientation with minimal support requirements.
-                              May result in different orientations than "Flat".
-                            </p>
-                          </div>
-                        </label>
-
-                        <label className="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                          <input
-                            type="radio"
-                            name="orientationStrategy"
-                            value="original"
-                            checked={settings.orientation_strategy === 'original'}
-                            onChange={(e) => handleChange('orientation_strategy', e.target.value)}
-                            className="w-5 h-5 text-red-600 border-gray-300 focus:ring-red-500 mt-0.5"
-                          />
-                          <div className="ml-3">
-                            <span className="font-semibold text-gray-900">Original (No Rotation)</span>
-                            <p className="text-sm text-gray-600 mt-1">
-                              Use the part orientation as it appears in the LDraw library. May require heavy supports.
-                            </p>
-                          </div>
-                        </label>
-                      </div>
-
-                      <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-4">
-                        <p className="text-sm text-yellow-800">
-                          ⚠️ <strong>Warning:</strong> Changing the orientation strategy will automatically clear all cached STL files.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="w-full px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition font-semibold"
-                  >
-                    {saving ? 'Saving...' : 'Save Orientation Settings'}
-                  </button>
-                </form>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded p-4">
-                <h3 className="text-sm font-semibold text-blue-900 mb-2">About Auto-Orientation</h3>
-                <p className="text-sm text-blue-800 mb-2">
-                  Auto-orientation analyzes each part and rotates it to optimize for 3D printing. This can significantly reduce:
-                </p>
-                <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
-                  <li>Support material required</li>
-                  <li>Print time and cost</li>
-                  <li>Risk of print failure</li>
-                  <li>Post-processing cleanup time</li>
+                <h2 className="text-xl font-bold mb-4">Cache management</h2>
+                <p className="text-sm text-gray-600 mb-3">Manage STL, Rebrickable, part preview, LDraw, and search history in the Cache tab.</p>
+                <button type="button" onClick={() => selectTab('cache')} className="inline-block px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">Open Cache tab</button>
+                <ul className="mt-2 text-sm text-gray-600 space-y-1">
+                  <li><a href="/settings/cache#stl-cache" className="text-gray-700 hover:underline">STL cache</a></li>
+                  <li><a href="/settings/cache#rebrickable-cache" className="text-gray-700 hover:underline">Rebrickable cache</a></li>
+                  <li><a href="/settings/cache#preview-cache" className="text-gray-700 hover:underline">Part preview cache</a></li>
+                  <li><a href="/settings/cache#ldraw-cache" className="text-gray-700 hover:underline">LDraw library</a></li>
+                  <li><a href="/settings/cache#search-history-cache" className="text-gray-700 hover:underline">Search history</a></li>
                 </ul>
               </div>
             </div>
           )}
 
-          {/* STL Processing Tab */}
-          {activeTab === 'stl' && (
+          {/* Build & rotation Tab */}
+          {activeTab === 'build' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold mb-4">STL Scaling</h2>
-                
-                <form onSubmit={handleSaveSettings}>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Scale Factor (multiplier for LDraw coordinates)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={settings.stl_scale_factor}
-                      onChange={(e) => handleChange('stl_scale_factor', e.target.value)}
-                      min="1"
-                      max="100"
-                      className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                    />
-                    <p className="text-sm text-gray-500 mt-1">
-                      Default: 16.67 (converts LDraw units to millimeters)
-                    </p>
-                    <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-2">
-                      <p className="text-sm text-yellow-800">
-                        ⚠️ <strong>Warning:</strong> Changing the scale factor will automatically clear all cached STL files.
-                      </p>
+              <form onSubmit={handleSaveSettings} className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-bold mb-4">Build plate and spacing</h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Plate width (mm)</label>
+                      <input type="number" value={settings.default_plate_width} onChange={(e) => handleChange('default_plate_width', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-gray-300 rounded" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Plate depth (mm)</label>
+                      <input type="number" value={settings.default_plate_depth} onChange={(e) => handleChange('default_plate_depth', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-gray-300 rounded" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Plate height (mm)</label>
+                      <input type="number" value={settings.default_plate_height} onChange={(e) => handleChange('default_plate_height', e.target.value)} min={100} max={2000} className="w-full px-4 py-2 border border-gray-300 rounded" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Part spacing (mm)</label>
+                      <input type="number" value={settings.part_spacing} onChange={(e) => handleChange('part_spacing', e.target.value)} min={1} max={10} className="w-full px-4 py-2 border border-gray-300 rounded" />
                     </div>
                   </div>
+                </div>
 
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="mt-4 w-full px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition font-semibold"
-                  >
-                    {saving ? 'Saving...' : 'Save Scale Factor'}
-                  </button>
-                </form>
-              </div>
-
-              <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold mb-4">STL Cache Management</h2>
-                
-                {cacheStats && (
-                  <div className="bg-gray-50 p-4 rounded mb-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-500">Cached Files</p>
-                        <p className="text-2xl font-bold text-gray-900">{cacheStats.stl_count}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Total Size</p>
-                        <p className="text-2xl font-bold text-gray-900">{cacheStats.total_size_mb.toFixed(2)} MB</p>
-                      </div>
+                <div className="pt-6 border-t border-gray-200">
+                  <h2 className="text-xl font-bold mb-4">Rotation (X, Y, Z degrees)</h2>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded mb-4">
+                    <div>
+                      <label htmlFor="rotationEnabled" className="text-sm font-medium block mb-1">Enable rotation</label>
+                      <p className="text-xs text-gray-500">Apply the same rotation to all parts</p>
                     </div>
-                    <p className="text-xs text-gray-500 mt-3 border-t border-gray-200 pt-3">
-                      <strong>Directory:</strong> {cacheStats.cache_dir}
-                    </p>
+                    <input type="checkbox" id="rotationEnabled" checked={settings.rotation_enabled} onChange={(e) => handleChange('rotation_enabled', e.target.checked)} className="w-6 h-6 text-gray-600 border-gray-300 rounded focus:ring-gray-500" />
                   </div>
-                )}
-                
-                <button
-                  onClick={handleClearCache}
-                  disabled={clearingCache}
-                  className="w-full px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:bg-gray-400 transition font-semibold"
-                >
-                  {clearingCache ? 'Clearing Cache...' : 'Clear STL Cache'}
+                  {settings.rotation_enabled && (
+                    <div className="grid grid-cols-3 gap-4 mb-4">
+                      <div><label className="block text-sm font-medium mb-1">X</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_x} onChange={(e) => handleChange('rotation_x', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded" /></div>
+                      <div><label className="block text-sm font-medium mb-1">Y</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_y} onChange={(e) => handleChange('rotation_y', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded" /></div>
+                      <div><label className="block text-sm font-medium mb-1">Z</label><input type="number" step="any" min={-360} max={360} value={settings.rotation_z} onChange={(e) => handleChange('rotation_z', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded" /></div>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded">
+                    <div>
+                      <label htmlFor="matchPreview" className="text-sm font-medium block mb-1">Default orientation (match preview)</label>
+                      <p className="text-xs text-gray-500">When rotation is off, apply X=-90° so STL matches part preview (studs up).</p>
+                    </div>
+                    <input type="checkbox" id="matchPreview" checked={settings.default_orientation_match_preview !== false} onChange={(e) => handleChange('default_orientation_match_preview', e.target.checked)} className="w-6 h-6 text-gray-600 border-gray-300 rounded focus:ring-gray-500" />
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-gray-200">
+                  <h2 className="text-xl font-bold mb-4">STL scale factor</h2>
+                  <input type="number" step="0.01" value={settings.stl_scale_factor} onChange={(e) => handleChange('stl_scale_factor', e.target.value)} min={0.01} max={100} className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded" />
+                  <p className="text-sm text-gray-500 mt-1">Default: 10 (LDView cm to mm). Calibration: part 3034 ≈ 16×64×3.2 mm. Changing clears STL cache.</p>
+                </div>
+
+                <div className="pt-6 border-t border-gray-200">
+                  <h2 className="text-xl font-bold mb-4">Part previews</h2>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={settings.auto_generate_part_previews !== false} onChange={(e) => handleChange('auto_generate_part_previews', e.target.checked)} className="w-5 h-5 rounded border-gray-300 text-gray-600 focus:ring-gray-500" />
+                    <span>Auto-generate part previews</span>
+                  </label>
+                  <p className="text-sm text-gray-500 mt-1"><a href="/settings/cache#preview-cache" className="text-gray-700 hover:underline">Manage part preview cache</a></p>
+                </div>
+
+                <button type="submit" disabled={saving} className="w-full px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 font-semibold">
+                  {saving ? 'Saving...' : 'Save settings'}
                 </button>
-                <p className="text-sm text-gray-500 mt-2">
-                  Clears all cached STL files. Parts will be reconverted from LDraw files on the next generation.
-                </p>
-              </div>
+              </form>
             </div>
           )}
 
-          {/* LDraw Library Tab */}
-          {activeTab === 'ldraw' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold mb-4">LDraw Parts Library</h2>
-                
-                {ldrawStats && (
-                  <div className="bg-gray-50 p-4 rounded mb-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-500">Status</span>
-                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                          ldrawStats.exists 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {ldrawStats.exists ? '✅ Downloaded' : '❌ Not Downloaded'}
-                        </span>
-                      </div>
-                      
-                      {ldrawStats.exists && (
-                        <>
-                          <div className="border-t border-gray-200 pt-3">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-gray-500 text-sm">Part Files</p>
-                                <p className="text-2xl font-bold text-gray-900">{ldrawStats.part_count.toLocaleString()}</p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 text-sm">Library Size</p>
-                                <p className="text-2xl font-bold text-gray-900">{ldrawStats.total_size_mb.toFixed(2)} MB</p>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="border-t border-gray-200 pt-3">
-                            <p className="text-xs text-gray-500">
-                              <strong>Path:</strong> {ldrawStats.library_path}
-                            </p>
-                          </div>
-                        </>
-                      )}
-                      
-                      {!ldrawStats.exists && (
-                        <div className="border-t border-gray-200 pt-3">
-                          <p className="text-sm text-gray-600">
-                            The LDraw library will be automatically downloaded (~40MB) when you generate your first set.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                <button
-                  onClick={handleClearLdraw}
-                  disabled={clearingLdraw || !ldrawStats?.exists}
-                  className="w-full px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 transition font-semibold"
-                >
-                  {clearingLdraw ? 'Clearing Library...' : 'Clear LDraw Library'}
-                </button>
-                <p className="text-sm text-gray-500 mt-2">
-                  Removes the LDraw parts library from disk. It will be automatically re-downloaded on the next generation.
-                </p>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded p-4">
-                <h3 className="text-sm font-semibold text-blue-900 mb-2">About LDraw</h3>
-                <p className="text-sm text-blue-800">
-                  LDraw is an open standard for LEGO CAD programs that creates 3D models using official part geometries. 
-                  This library contains thousands of LEGO part definitions that are converted to STL files for 3D printing.
-                </p>
-              </div>
+          {/* Cache Tab */}
+          {activeTab === 'cache' && (
+            <div>
+              <p className="text-sm text-gray-600 mb-4">Manage STL, Rebrickable, part preview, LDraw, and search history caches.</p>
+              <CacheManagementContent />
             </div>
           )}
         </div>

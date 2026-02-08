@@ -1,37 +1,40 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 
 function SetDetailPage() {
   const { setNum } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const backToSearch = () => navigate('/', { state: location.state || {} })
   const [setDetail, setSetDetail] = useState(null)
   const [partsList, setPartsList] = useState([])
   const [showParts, setShowParts] = useState(false)
   const [loadingParts, setLoadingParts] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [plateWidth, setPlateWidth] = useState(220)
-  const [plateDepth, setPlateDepth] = useState(220)
-  const [bypassCache, setBypassCache] = useState(false)
-  const [outputFormat, setOutputFormat] = useState('3mf')  // '3mf' or 'zip'
-  const [generating, setGenerating] = useState(false)
-  const [jobId, setJobId] = useState(null)
-  const [jobStatus, setJobStatus] = useState(null)
+  const [projectName, setProjectName] = useState('')
+  const [creatingProject, setCreatingProject] = useState(false)
+  const [projectDuplicateWarning, setProjectDuplicateWarning] = useState(false)
+  const [autoGeneratePartPreviews, setAutoGeneratePartPreviews] = useState(true)
+  const [partsPage, setPartsPage] = useState(1)
+  const [expandedPreview, setExpandedPreview] = useState(null)
+
+  const PARTS_PAGE_SIZE = 20
+  const partsTotalPages = Math.max(1, Math.ceil(partsList.length / PARTS_PAGE_SIZE))
+  const partsToShow = partsList.slice((partsPage - 1) * PARTS_PAGE_SIZE, partsPage * PARTS_PAGE_SIZE)
 
   useEffect(() => {
     fetchSetDetail()
-    fetchSettings()
     fetchPartsList()
   }, [setNum])
+  useEffect(() => setPartsPage(1), [setNum, partsList.length])
 
   useEffect(() => {
-    if (jobId && jobStatus?.status !== 'completed' && jobStatus?.status !== 'failed') {
-      const interval = setInterval(() => {
-        checkJobStatus()
-      }, 2000)
-      return () => clearInterval(interval)
-    }
-  }, [jobId, jobStatus])
+    fetch('/api/settings')
+      .then(r => r.ok ? r.json() : {})
+      .then(s => setAutoGeneratePartPreviews(s.auto_generate_part_previews !== false))
+      .catch(() => {})
+  }, [])
 
   const fetchSetDetail = async () => {
     try {
@@ -43,19 +46,6 @@ function SetDetailPage() {
       setError(err.message)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const fetchSettings = async () => {
-    try {
-      const response = await fetch('/api/settings')
-      if (response.ok) {
-        const data = await response.json()
-        setPlateWidth(data.default_plate_width)
-        setPlateDepth(data.default_plate_depth)
-      }
-    } catch (err) {
-      console.error('Failed to fetch settings:', err)
     }
   }
 
@@ -74,57 +64,25 @@ function SetDetailPage() {
     }
   }
 
-  const handleGenerate = async () => {
-    setGenerating(true)
-    setError(null)
-
+  const handleCreateProject = async () => {
+    const name = (projectName || setDetail?.name || setNum || 'Project').trim()
+    if (!name) return
+    setCreatingProject(true)
+    setProjectDuplicateWarning(false)
     try {
-      const response = await fetch('/api/generate', {
+      const r = await fetch('/api/projects', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          set_num: setNum,
-          plate_width: plateWidth,
-          plate_depth: plateDepth,
-          bypass_cache: bypassCache,
-          generate_3mf: outputFormat === '3mf',
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ set_num: setDetail?.set_num || setNum, name })
       })
-
-      if (!response.ok) throw new Error('Failed to start generation')
-
-      const job = await response.json()
-      setJobId(job.job_id)
-      setJobStatus(job)
-    } catch (err) {
-      setError(err.message)
-      setGenerating(false)
-    }
-  }
-
-  const checkJobStatus = async () => {
-    if (!jobId) return
-
-    try {
-      const response = await fetch(`/api/jobs/${jobId}`)
-      if (!response.ok) return
-
-      const status = await response.json()
-      setJobStatus(status)
-
-      if (status.status === 'completed' || status.status === 'failed') {
-        setGenerating(false)
-      }
-    } catch (err) {
-      console.error('Failed to check job status:', err)
-    }
-  }
-
-  const handleDownload = () => {
-    if (jobId && jobStatus?.status === 'completed') {
-      window.location.href = `/api/download/${jobId}`
+      if (!r.ok) throw new Error('Failed to create project')
+      const data = await r.json()
+      if (data.existing_project_for_set) setProjectDuplicateWarning(true)
+      navigate(`/projects/${data.id}`)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setCreatingProject(false)
     }
   }
 
@@ -139,7 +97,7 @@ function SetDetailPage() {
           Error: {error}
         </div>
         <button
-          onClick={() => navigate('/')}
+          onClick={backToSearch}
           className="mt-4 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
         >
           Back to Search
@@ -151,7 +109,7 @@ function SetDetailPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <button
-        onClick={() => navigate('/')}
+        onClick={backToSearch}
         className="mb-4 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
       >
         ← Back to Search
@@ -171,13 +129,29 @@ function SetDetailPage() {
           <div>
             <h1 className="text-3xl font-bold mb-2">{setDetail.name}</h1>
             <p className="text-lg text-gray-600 mb-4">Set #{setDetail.set_num}</p>
-            
+            {setDetail.cached_at && (
+              <p className="text-sm text-gray-500 mb-2">Data cached: {new Date(setDetail.cached_at).toLocaleString()}</p>
+            )}
             <div className="space-y-2 text-gray-700">
               {setDetail.year && <p>Year: {setDetail.year}</p>}
               {setDetail.theme && <p>Theme: {setDetail.theme}</p>}
               {setDetail.subtheme && <p>Subtheme: {setDetail.subtheme}</p>}
               {setDetail.pieces && <p>Pieces: {setDetail.pieces}</p>}
               {setDetail.parts_count && <p>Unique Parts: {setDetail.parts_count}</p>}
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <p className="text-sm font-medium text-gray-700 mb-2">Create project (to generate set multiple times with jobs)</p>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder={setDetail.name || 'Project name'}
+                  className="flex-1 max-w-xs px-3 py-2 border border-gray-300 rounded"
+                />
+                <button onClick={handleCreateProject} disabled={creatingProject} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Create project</button>
+              </div>
+              {projectDuplicateWarning && <p className="text-amber-600 text-sm mt-1">A project for this set already exists; you can still create another.</p>}
             </div>
           </div>
         </div>
@@ -189,7 +163,7 @@ function SetDetailPage() {
             className="w-full flex items-center justify-between text-left mb-4"
           >
             <h2 className="text-2xl font-bold">
-              Parts List ({partsList.length} unique parts)
+              Parts List ({partsList.length} parts)
             </h2>
             <span className="text-2xl">{showParts ? '▼' : '▶'}</span>
           </button>
@@ -215,6 +189,11 @@ function SetDetailPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
+                          {autoGeneratePartPreviews && (
+                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                              Preview
+                            </th>
+                          )}
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Part #
                           </th>
@@ -233,8 +212,20 @@ function SetDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {partsList.map((part, index) => (
-                          <tr key={index} className="hover:bg-gray-50">
+                        {partsToShow.map((part, index) => (
+                          <tr key={(partsPage - 1) * PARTS_PAGE_SIZE + index} className="hover:bg-gray-50">
+                            {autoGeneratePartPreviews && (
+                              <td className="px-2 py-2">
+                                <button type="button" onClick={() => setExpandedPreview(part)} className="block focus:outline-none focus:ring-2 focus:ring-red-500 rounded">
+                                  <img
+                                    src={`/api/parts/preview/${encodeURIComponent(part.ldraw_id || part.part_num)}?size=256${part.color_rgb ? `&color=${encodeURIComponent(part.color_rgb)}` : ''}`}
+                                    alt=""
+                                    className="w-20 h-20 object-contain bg-gray-100 rounded hover:opacity-90"
+                                    onError={(e) => { e.target.style.display = 'none' }}
+                                  />
+                                </button>
+                              </td>
+                            )}
                             <td className="px-4 py-3 whitespace-nowrap text-sm font-mono">
                               {part.part_num}
                             </td>
@@ -286,6 +277,17 @@ function SetDetailPage() {
                       </tbody>
                     </table>
                   </div>
+                  {partsList.length > PARTS_PAGE_SIZE && (
+                    <div className="flex items-center justify-between mt-4">
+                      <span className="text-sm text-gray-600">
+                        Page {partsPage} of {partsTotalPages} ({partsList.length} parts)
+                      </span>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setPartsPage(p => Math.max(1, p - 1))} disabled={partsPage <= 1} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Previous</button>
+                        <button type="button" onClick={() => setPartsPage(p => Math.min(partsTotalPages, p + 1))} disabled={partsPage >= partsTotalPages} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="text-center py-4 text-gray-500">No parts data available</div>
@@ -295,167 +297,26 @@ function SetDetailPage() {
         </div>
       </div>
 
-      {/* Generate Files Section - Now at bottom */}
-        <h2 className="text-2xl font-bold mb-4">Generate Files</h2>
-        
-        <div className="space-y-4 mb-6">
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Output Format
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="outputFormat"
-                  value="3mf"
-                  checked={outputFormat === '3mf'}
-                  onChange={(e) => setOutputFormat(e.target.value)}
-                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
-                />
-                <span className="ml-2 text-sm">
-                  <strong>3MF file</strong> - Parts pre-arranged on build plate (recommended)
-                </span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="outputFormat"
-                  value="zip"
-                  checked={outputFormat === 'zip'}
-                  onChange={(e) => setOutputFormat(e.target.value)}
-                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
-                />
-                <span className="ml-2 text-sm">
-                  <strong>ZIP file</strong> - Individual STL files for manual arrangement
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Build Plate Width (mm)
-              </label>
-                <input
-                  type="number"
-                  value={plateWidth}
-                  onChange={(e) => setPlateWidth(parseInt(e.target.value))}
-                  min="100"
-                  max="2000"
-                  className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Build Plate Depth (mm)
-              </label>
-                <input
-                  type="number"
-                  value={plateDepth}
-                  onChange={(e) => setPlateDepth(parseInt(e.target.value))}
-                  min="100"
-                  max="2000"
-                  className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-            </div>
-          </div>
-          
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="bypassCache"
-              checked={bypassCache}
-              onChange={(e) => setBypassCache(e.target.checked)}
-              className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+      {expandedPreview && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setExpandedPreview(null)}>
+          <div className="bg-white rounded-lg shadow-xl p-4 max-w-full" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-medium mb-2">{expandedPreview.ldraw_id || expandedPreview.part_num} {expandedPreview.name}</p>
+            <img
+              src={`/api/parts/preview/${encodeURIComponent(expandedPreview.ldraw_id || expandedPreview.part_num)}?size=256${expandedPreview.color_rgb ? `&color=${encodeURIComponent(expandedPreview.color_rgb)}` : ''}`}
+              alt=""
+              className="w-64 h-64 object-contain bg-gray-100 rounded"
             />
-            <label htmlFor="bypassCache" className="ml-2 text-sm font-medium">
-              Bypass cache (reconvert all parts)
-            </label>
-          </div>
-          
-          <div className="bg-blue-50 border border-blue-200 rounded p-3">
-            <p className="text-sm text-blue-800">
-              💡 <strong>Tip:</strong> Auto-orientation and scaling can be adjusted in{' '}
-              <button 
-                onClick={() => navigate('/settings')}
-                className="underline hover:text-blue-900"
-              >
-                Settings
-              </button>
-              . These settings are applied globally to all generations.
-            </p>
+            <button type="button" onClick={() => setExpandedPreview(null)} className="mt-2 w-full py-1 border rounded text-sm hover:bg-gray-50">Close</button>
           </div>
         </div>
+      )}
 
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="w-full px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition font-semibold"
-        >
-          {generating ? 'Generating...' : `Generate ${outputFormat.toUpperCase()} File`}
-        </button>
-
-        {jobStatus && (
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold">Status:</span>
-              <span className={`px-3 py-1 rounded text-sm font-medium ${
-                jobStatus.status === 'completed' ? 'bg-green-100 text-green-800' :
-                jobStatus.status === 'failed' ? 'bg-red-100 text-red-800' :
-                jobStatus.status === 'processing' ? 'bg-blue-100 text-blue-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                {jobStatus.status}
-              </span>
-            </div>
-            
-            {jobStatus.status !== 'failed' && (
-              <div className="mb-2">
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span>Progress</span>
-                  <span>{jobStatus.progress}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-red-600 h-2 rounded-full transition-all"
-                    style={{ width: `${jobStatus.progress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {jobStatus.error_message && (
-              <div className="text-red-600 text-sm mt-2">
-                Error: {jobStatus.error_message}
-              </div>
-            )}
-
-            {jobStatus.status === 'completed' && (
-              <div className="mt-4 space-y-2">
-                <button
-                  onClick={handleDownload}
-                  className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
-                >
-                  Download {jobStatus.output_file?.endsWith('.3mf') ? '3MF' : 'ZIP'} File
-                </button>
-                <p className="text-sm text-gray-500 text-center">
-                  {jobStatus.output_file?.endsWith('.3mf') 
-                    ? 'Import into your slicer - parts are already arranged on the build plate'
-                    : 'Contains all individual STL files for each part'}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
-            Error: {error}
-          </div>
-        )}
-      </div>
+      {error && (
+        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
+          Error: {error}
+        </div>
+      )}
+    </div>
   )
 }
 

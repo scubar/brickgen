@@ -16,12 +16,20 @@ class Settings(BaseSettings):
     default_plate_height: int = 250
     part_spacing: int = 2
     
-    # STL Scale Factor (multiplier for LDraw coordinates)
-    stl_scale_factor: float = 16.67
+    # STL Scale Factor: LDView exports STL in centimeters; multiply by 10 to get mm.
+    # Calibration baseline: part 3034 (Plate 2x8) = 16×64×3.2 mm, part 3404 (Brick 2x4) = 16×32×9.6 mm.
+    stl_scale_factor: float = 10.0
     
-    # STL Orientation Settings
-    auto_orient_enabled: bool = True
-    orientation_strategy: str = "studs_up"  # "studs_up", "flat", "minimize_supports", "original"
+    # STL Rotation: absolute degrees (X, Y, Z) when enabled
+    rotation_enabled: bool = False
+    rotation_x: float = 0.0
+    rotation_y: float = 0.0
+    rotation_z: float = 0.0
+    # When True, apply X=-90° to STLs when rotation is off so orientation matches LDView preview (studs up)
+    default_orientation_match_preview: bool = True
+
+    # Part previews: when True, frontend may request preview images (lazy) for parts
+    auto_generate_part_previews: bool = True
     
     # Paths
     ldraw_library_path: Path = Path("/app/data/ldraw")

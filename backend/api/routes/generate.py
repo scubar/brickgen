@@ -145,9 +145,9 @@ async def process_generation(
             )
             
             if stl_path and stl_path.exists():
-                # Add multiple entries for quantity (will be numbered in ZIP)
+                color_rgb = part.get("color_rgb")
                 for _ in range(quantity):
-                    stl_files.append((stl_path, ldraw_id))
+                    stl_files.append((stl_path, ldraw_id, color_rgb))
                     converted_count += 1
             else:
                 line = f"Failed to convert {ldraw_id} (part {part_num}) to STL"
@@ -181,11 +181,14 @@ async def process_generation(
             db.commit()
             try:
                 unique_parts = {}
-                for stl_path, ldraw_id in stl_files:
+                for stl_path, ldraw_id, color_rgb in stl_files:
                     if stl_path not in unique_parts:
-                        unique_parts[stl_path] = {'ldraw_id': ldraw_id, 'quantity': 0}
+                        unique_parts[stl_path] = {'ldraw_id': ldraw_id, 'quantity': 0, 'color_rgb': color_rgb}
                     unique_parts[stl_path]['quantity'] += 1
-                parts_for_3mf = [(path, info['ldraw_id'], info['quantity']) for path, info in unique_parts.items()]
+                parts_for_3mf = [
+                    (path, info['ldraw_id'], info['quantity'], info.get('color_rgb'))
+                    for path, info in unique_parts.items()
+                ]
                 threemf_gen = ThreeMFGenerator(part_spacing=settings.part_spacing)
                 if not threemf_gen.generate_3mf(parts_for_3mf, plate_width, plate_depth, threemf_path):
                     raise RuntimeError("3MF generation returned False")
@@ -208,7 +211,7 @@ async def process_generation(
                         zipf.write(threemf_path, f"{job_id}.3mf")
                     if generate_stl:
                         part_counts = {}
-                        for stl_path, ldraw_id in stl_files:
+                        for stl_path, ldraw_id, _ in stl_files:
                             if ldraw_id not in part_counts:
                                 part_counts[ldraw_id] = 0
                             part_counts[ldraw_id] += 1

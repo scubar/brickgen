@@ -26,13 +26,24 @@ function ProjectDetailPage() {
   const [wizardPartsPage, setWizardPartsPage] = useState(1)
   const [partsList, setPartsList] = useState([])
   const [partsPage, setPartsPage] = useState(1)
+  const [colorRefPage, setColorRefPage] = useState(1)
   const [deletingJobId, setDeletingJobId] = useState(null)
   const WIZARD_PARTS_PAGE_SIZE = 20
   const PARTS_PAGE_SIZE = 15
+  const COLOR_REF_PAGE_SIZE = 20
   const wizardPartsTotalPages = Math.max(1, Math.ceil(wizardParts.length / WIZARD_PARTS_PAGE_SIZE))
   const wizardPartsToShow = wizardParts.slice((wizardPartsPage - 1) * WIZARD_PARTS_PAGE_SIZE, wizardPartsPage * WIZARD_PARTS_PAGE_SIZE)
   const partsTotalPages = Math.max(1, Math.ceil(partsList.length / PARTS_PAGE_SIZE))
   const partsToShow = partsList.slice((partsPage - 1) * PARTS_PAGE_SIZE, partsPage * PARTS_PAGE_SIZE)
+  const partColorRefList = partsList.flatMap((p) =>
+    Array.from({ length: p.quantity || 1 }, (_, i) => ({
+      partId: `${p.ldraw_id || p.part_num}_${i + 1}`,
+      color: p.color || '—',
+      color_rgb: (p.color_rgb && String(p.color_rgb).trim()) ? String(p.color_rgb).replace(/^#/, '') : '—'
+    }))
+  )
+  const colorRefTotalPages = Math.max(1, Math.ceil(partColorRefList.length / COLOR_REF_PAGE_SIZE))
+  const colorRefToShow = partColorRefList.slice((colorRefPage - 1) * COLOR_REF_PAGE_SIZE, colorRefPage * COLOR_REF_PAGE_SIZE)
 
   useEffect(() => {
     fetchProject()
@@ -52,6 +63,10 @@ function ProjectDetailPage() {
     } else {
       setPartsList([])
     }
+  }, [project?.set_num])
+
+  useEffect(() => {
+    setColorRefPage(1)
   }, [project?.set_num])
 
   useEffect(() => {
@@ -288,8 +303,47 @@ function ProjectDetailPage() {
         </details>
       )}
 
+      {partColorRefList.length > 0 && (
+        <details className="bg-dk-2 rounded-lg border border-dk-3 p-4 mb-6">
+          <summary className="cursor-pointer font-semibold text-dk-5 hover:text-mint">Part &amp; color reference (for Bambu Studio / OrcaSlicer)</summary>
+          <p className="mt-2 mb-3 text-sm text-dk-5/90">Use this list to assign filament to parts in your slicer. Part number format is <code className="bg-dk-1 px-1 rounded">LDrawId_instance</code> (e.g. 3404_1, 3404_2).</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-dk-5 border-b border-dk-3">
+                  <th className="pb-2 pr-4">Part number</th>
+                  <th className="pb-2 pr-4">Color</th>
+                  <th className="pb-2">Hex code</th>
+                </tr>
+              </thead>
+              <tbody className="text-dk-5">
+                {colorRefToShow.map((row) => (
+                  <tr key={row.partId} className="border-b border-dk-3/50">
+                    <td className="py-1.5 font-mono">{row.partId}</td>
+                    <td className="py-1.5">{row.color}</td>
+                    <td className="py-1.5 font-mono">{row.color_rgb !== '—' ? `#${row.color_rgb}` : row.color_rgb}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {colorRefTotalPages > 1 && (
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dk-3">
+                <button type="button" onClick={() => setColorRefPage((p) => Math.max(1, p - 1))} disabled={colorRefPage <= 1} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Previous</button>
+                <span className="text-sm text-dk-5">Page {colorRefPage} of {colorRefTotalPages}</span>
+                <button type="button" onClick={() => setColorRefPage((p) => Math.min(colorRefTotalPages, p + 1))} disabled={colorRefPage >= colorRefTotalPages} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Next</button>
+              </div>
+            )}
+          </div>
+        </details>
+      )}
+
       <div className="bg-dk-2 rounded-lg border border-dk-3 p-6 mb-6">
         <h2 className="text-lg font-bold mb-4 text-dk-5">Jobs</h2>
+        {jobs.some((j) => j.status === 'completed' && j.output_file?.endsWith('.3mf')) && (
+          <div className="mb-4 p-3 bg-dk-1 border border-dk-3 rounded text-sm text-dk-5">
+            <strong>3MF and OrcaSlicer / Bambu Studio:</strong> Colors in the 3MF are embedded for viewers like Microsoft 3D Viewer. OrcaSlicer and Bambu Studio do not preserve these colors and may show filament at index 1. Use the <strong>Part &amp; color reference</strong> section below to assign filaments to parts manually in your slicer.
+          </div>
+        )}
         <button onClick={openWizard} className="mb-4 px-6 py-2 bg-mint text-dk-1 rounded hover:opacity-90">New job</button>
 
         {jobs.length === 0 ? (
@@ -360,6 +414,7 @@ function ProjectDetailPage() {
                       <div>
                         <span className="font-medium">3MF</span>
                         <p className="text-sm text-dk-5/90">Parts pre-arranged on build plate (recommended for printing)</p>
+                        <p className="text-xs text-dk-5/70 mt-0.5">Color in 3MF is not preserved in OrcaSlicer/Bambu Studio; use the Part &amp; color reference on this page to set filament per part.</p>
                       </div>
                     </label>
                     <label className="flex items-start gap-3 p-3 border border-dk-3 rounded cursor-pointer hover:bg-dk-3/50">

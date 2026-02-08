@@ -79,6 +79,12 @@ docker-compose logs -f brickgen
 6. **Slice** the 3MF file in your preferred slicer (PrusaSlicer, Cura, etc.)
 7. **Print!**
 
+### 3MF and slicers
+
+- **Multiple build plates**: If parts don’t fit on one plate, Brickgen adds more logical plates (stacked in Y) in the same 3MF so everything is packed.
+- **Colors**: Part colors from Rebrickable are written into the 3MF (Materials Extension) so slicers can show colored parts.
+- **Bambu Studio**: When you open a 3MF that wasn’t created by Bambu Lab, Bambu may show “load geometry data and color data only” and can ignore placement, so parts may appear stacked in the center. Use the slicer’s own “Arrange” or placement tools if needed. Other slicers that support 3MF Core (e.g. PrusaSlicer, Cura) should respect the packed placement.
+
 ## Configuration
 
 ### Build Plate Defaults

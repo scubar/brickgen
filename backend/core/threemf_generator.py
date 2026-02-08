@@ -1,12 +1,25 @@
-"""3MF file generation with bin packing for 3D printing."""
+"""3MF file generation with bin packing for 3D printing.
+
+Note on Bambu Studio: When opening a 3MF not created by Bambu Lab, Bambu Studio shows
+"load geometry data and color data only". It uses the 3MF Production Extension by default;
+for other 3MF files it may ignore build-item transforms (placement) and only import
+meshes, then apply its own arrangement. So pre-placed parts may still appear stacked in
+the center in Bambu; other slicers (e.g. PrusaSlicer, Cura) that fully support 3MF Core
+should respect our placement. We output standard 3MF Core with matrix transforms and
+optional Materials Extension colors for maximum compatibility.
+"""
 import logging
+import os
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
 import re
 
 logger = logging.getLogger(__name__)
+
+# 3MF Materials Extension namespace for color
+NS_M = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02"
 
 
 class ThreeMFGenerator:
@@ -22,15 +35,16 @@ class ThreeMFGenerator:
     
     def generate_3mf(
         self,
-        parts: List[Tuple[Path, str, int]],  # (stl_path, ldraw_id, quantity)
+        parts: List[Tuple[Any, ...]],  # (stl_path, ldraw_id, quantity) or (..., color_rgb)
         plate_width: int,
         plate_depth: int,
         output_path: Path
     ) -> bool:
-        """Generate 3MF file with parts arranged on build plate.
+        """Generate 3MF file with parts arranged on build plate(s) using bin packing.
         
         Args:
-            parts: List of (stl_path, ldraw_id, quantity) tuples
+            parts: (stl_path, ldraw_id, quantity) or (stl_path, ldraw_id, quantity, color_rgb).
+                   color_rgb optional, e.g. "FF5500" (hex without #).
             plate_width: Build plate width in mm
             plate_depth: Build plate depth in mm
             output_path: Where to save the 3MF file
@@ -39,31 +53,29 @@ class ThreeMFGenerator:
             True if successful, False if parts don't fit or error occurs
         """
         try:
-            # Parse all STL files and get bounding boxes
             part_meshes = []
-            for stl_path, ldraw_id, quantity in parts:
-                mesh_data = self._parse_stl(stl_path)
+            for t in parts:
+                stl_path, ldraw_id, quantity = t[0], t[1], t[2]
+                color_rgb = (t[3].strip().lstrip("#") or None) if len(t) > 3 and t[3] else None
+                if color_rgb and len(color_rgb) != 6:
+                    color_rgb = None
+                mesh_data = self._parse_stl(Path(stl_path))
                 if mesh_data:
                     bbox = self._compute_bounding_box(mesh_data['vertices'])
                     part_meshes.append({
                         'mesh_data': mesh_data,
                         'ldraw_id': ldraw_id,
                         'bbox': bbox,
-                        'quantity': quantity
+                        'quantity': quantity,
+                        'color_rgb': color_rgb,
                     })
-            
             if not part_meshes:
                 logger.error("No valid meshes to pack")
                 return False
-            
-            # Perform bin packing
             placements = self._pack_parts(part_meshes, plate_width, plate_depth)
-            
             if not placements:
-                logger.error("Parts do not fit on build plate")
+                logger.error("Parts do not fit on build plate(s)")
                 return False
-            
-            # Generate 3MF file
             return self._create_3mf_file(placements, output_path)
             
         except Exception as e:
@@ -150,7 +162,7 @@ class ThreeMFGenerator:
         """
         placements = []
         
-        # Create instances for all quantities
+        # Build instance list (one per quantity) and carry color
         instances = []
         for part in part_meshes:
             for i in range(part['quantity']):
@@ -158,50 +170,42 @@ class ThreeMFGenerator:
                     'mesh_data': part['mesh_data'],
                     'ldraw_id': part['ldraw_id'],
                     'bbox': part['bbox'],
-                    'instance_num': i + 1
+                    'instance_num': i + 1,
+                    'color_rgb': part.get('color_rgb'),
                 })
         
-        # Sort by footprint area (largest first for better packing)
         instances.sort(key=lambda x: x['bbox']['size'][0] * x['bbox']['size'][1], reverse=True)
         
-        # Shelf packing algorithm
-        shelves = []  # List of {'y': y_pos, 'height': height, 'x': current_x, 'width_remaining': width}
-        current_y = 0
+        plate_gap = 10  # mm between logical plates
+        plate_offset_y = 0.0
+        shelves = []
+        current_y = 0.0
         
         for instance in instances:
             bbox = instance['bbox']
             width = bbox['size'][0]
             depth = bbox['size'][1]
             height = bbox['size'][2]
-            
-            # Add spacing
             width_with_spacing = width + self.part_spacing
             depth_with_spacing = depth + self.part_spacing
             
-            # Try to fit in existing shelves
             placed = False
             for shelf in shelves:
                 if shelf['width_remaining'] >= width_with_spacing and current_y + depth_with_spacing <= plate_depth:
-                    # Place on this shelf
                     x_pos = shelf['x']
-                    y_pos = shelf['y']
-                    z_pos = 0  # On build plate
-                    
-                    # Calculate translation (move from bbox center to position)
+                    y_pos = shelf['y'] + plate_offset_y
                     translation = [
                         x_pos + width / 2 - bbox['center'][0],
                         y_pos + depth / 2 - bbox['center'][1],
-                        -bbox['min'][2]  # Place bottom on Z=0
+                        -bbox['min'][2]
                     ]
-                    
                     placements.append({
                         'mesh_data': instance['mesh_data'],
                         'translation': translation,
                         'ldraw_id': instance['ldraw_id'],
-                        'instance_num': instance['instance_num']
+                        'instance_num': instance['instance_num'],
+                        'color_rgb': instance.get('color_rgb'),
                     })
-                    
-                    # Update shelf
                     shelf['x'] += width_with_spacing
                     shelf['width_remaining'] -= width_with_spacing
                     shelf['height'] = max(shelf['height'], height)
@@ -209,42 +213,36 @@ class ThreeMFGenerator:
                     break
             
             if not placed:
-                # Create new shelf
                 if current_y + depth_with_spacing > plate_depth:
-                    # Doesn't fit on plate
-                    logger.warning(f"Parts don't fit: plate_depth={plate_depth}, needed={current_y + depth_with_spacing}")
-                    return None
+                    # Start a new build plate
+                    plate_offset_y += plate_depth + plate_gap
+                    current_y = 0.0
+                    shelves = []
                 
-                # Start new shelf
                 x_pos = 0
-                y_pos = current_y
-                z_pos = 0
-                
+                y_pos = current_y + plate_offset_y
                 translation = [
                     x_pos + width / 2 - bbox['center'][0],
                     y_pos + depth / 2 - bbox['center'][1],
                     -bbox['min'][2]
                 ]
-                
                 placements.append({
                     'mesh_data': instance['mesh_data'],
                     'translation': translation,
                     'ldraw_id': instance['ldraw_id'],
-                    'instance_num': instance['instance_num']
+                    'instance_num': instance['instance_num'],
+                    'color_rgb': instance.get('color_rgb'),
                 })
-                
                 shelves.append({
                     'y': current_y,
                     'height': height,
                     'x': width_with_spacing,
                     'width_remaining': plate_width - width_with_spacing
                 })
-                
-                # Update current_y for next shelf
-                if shelves:
-                    current_y += max(shelf['height'] for shelf in shelves) + self.part_spacing
+                current_y += height + self.part_spacing
         
-        logger.info(f"Packed {len(placements)} parts onto build plate")
+        num_plates = 1 + int(plate_offset_y / (plate_depth + plate_gap)) if plate_offset_y > 0 else 1
+        logger.info(f"Packed {len(placements)} parts onto {num_plates} build plate(s)")
         return placements
     
     def _create_3mf_file(self, placements: List[Dict], output_path: Path) -> bool:
@@ -280,9 +278,10 @@ class ThreeMFGenerator:
                 
                 # Create 3MF ZIP file
                 with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for root, dirs, files in tmppath.walk():
+                    for root, _dirs, files in os.walk(tmppath):
+                        root_path = Path(root)
                         for file in files:
-                            file_path = root / file
+                            file_path = root_path / file
                             arcname = file_path.relative_to(tmppath)
                             zf.write(file_path, arcname)
                 
@@ -316,42 +315,65 @@ class ThreeMFGenerator:
         tree.write(base_path / "_rels" / ".rels", encoding="utf-8", xml_declaration=True)
     
     def _create_model_file(self, base_path: Path, placements: List[Dict]):
-        """Create 3D/3dmodel.model file with meshes and build items."""
+        """Create 3D/3dmodel.model file with meshes, optional colors, and build items.
+        Uses 3MF Core transform matrix (column-major 3x4) for placement compatibility.
+        """
         model_ns = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
-        
         root = ET.Element("model", unit="millimeter", xmlns=model_ns)
+        root.set("xmlns:m", NS_M)
         resources = ET.SubElement(root, "resources")
         build = ET.SubElement(root, "build")
         
-        # Add each mesh as a resource and build item
+        # Collect unique colors and build colorgroup (Materials Extension)
+        unique_colors = []
+        color_to_index = {}
+        default_hex = "808080"
+        for p in placements:
+            rgb = (p.get("color_rgb") or "").strip().upper()
+            if len(rgb) == 6 and all(c in "0123456789ABCDEF" for c in rgb):
+                if rgb not in color_to_index:
+                    color_to_index[rgb] = len(unique_colors)
+                    unique_colors.append(rgb)
+            else:
+                if default_hex not in color_to_index:
+                    color_to_index[default_hex] = len(unique_colors)
+                    unique_colors.append(default_hex)
+        
+        # Resource IDs must be unique. Use id=1 for colorgroup, 2+ for objects.
+        next_object_id = 2 if unique_colors else 1
+        if unique_colors:
+            cg = ET.SubElement(resources, f"{{{NS_M}}}colorgroup", id="1")
+            for hex_rgb in unique_colors:
+                ET.SubElement(cg, f"{{{NS_M}}}color", color=f"#{hex_rgb}")
+        
         for idx, placement in enumerate(placements):
-            object_id = idx + 1
+            object_id = next_object_id + idx
             mesh_data = placement['mesh_data']
             translation = placement['translation']
+            rgb = (placement.get("color_rgb") or "").strip().upper()
+            if len(rgb) != 6 or not all(c in "0123456789ABCDEF" for c in rgb):
+                rgb = default_hex
+            color_index = color_to_index.get(rgb, 0)
             
-            # Create object resource with mesh
-            obj = ET.SubElement(resources, "object", id=str(object_id), type="model")
+            obj_attrib = {"id": str(object_id), "type": "model"}
+            if unique_colors:
+                obj_attrib["pid"] = "1"
+                obj_attrib["pindex"] = str(color_index)
+            obj = ET.SubElement(resources, "object", **obj_attrib)
             mesh = ET.SubElement(obj, "mesh")
             vertices_elem = ET.SubElement(mesh, "vertices")
             triangles_elem = ET.SubElement(mesh, "triangles")
-            
-            # Add vertices
             for vertex in mesh_data['vertices']:
                 ET.SubElement(vertices_elem, "vertex",
-                            x=f"{vertex[0]:.6f}",
-                            y=f"{vertex[1]:.6f}",
-                            z=f"{vertex[2]:.6f}")
-            
-            # Add triangles
+                    x=f"{vertex[0]:.6f}", y=f"{vertex[1]:.6f}", z=f"{vertex[2]:.6f}")
             for triangle in mesh_data['triangles']:
                 ET.SubElement(triangles_elem, "triangle",
-                            v1=str(triangle[0]),
-                            v2=str(triangle[1]),
-                            v3=str(triangle[2]))
+                    v1=str(triangle[0]), v2=str(triangle[1]), v3=str(triangle[2]))
             
-            # Add to build with transformation
-            transform = f"{translation[0]:.6f} {translation[1]:.6f} {translation[2]:.6f}"
-            ET.SubElement(build, "item", objectid=str(object_id), transform=f"translate({transform})")
+            # 3MF transform: 3x4 matrix column-major (m00 m10 m20 m01 m11 m21 m02 m12 m22 m03 m13 m23)
+            tx, ty, tz = translation[0], translation[1], translation[2]
+            matrix = f"1 0 0 0 1 0 0 0 1 {tx:.6f} {ty:.6f} {tz:.6f}"
+            ET.SubElement(build, "item", objectid=str(object_id), transform=matrix)
         
         tree = ET.ElementTree(root)
         ET.indent(tree, space="  ")

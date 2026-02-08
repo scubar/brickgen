@@ -22,6 +22,7 @@ function ProjectDetailPage() {
   const [wizardGlobalSettings, setWizardGlobalSettings] = useState(null)
   const [wizardParts, setWizardParts] = useState([])
   const [perPartRotation, setPerPartRotation] = useState({})
+  const [previewRotationByPart, setPreviewRotationByPart] = useState({}) // rotation actually used for preview image (updated on "Update" click)
   const [wizardPartsPage, setWizardPartsPage] = useState(1)
   const [partsList, setPartsList] = useState([])
   const [partsPage, setPartsPage] = useState(1)
@@ -105,6 +106,7 @@ function ProjectDetailPage() {
   const openWizard = async () => {
     setWizardStep(0)
     setPerPartRotation({})
+    setPreviewRotationByPart({})
     setWizardOpen(true)
     try {
       const [settingsRes, partsRes] = await Promise.all([
@@ -409,47 +411,60 @@ function ProjectDetailPage() {
                   )}
                 </div>
               )}
-              {wizardStep === 3 && (
-                <div className="space-y-3">
-                  <p className="text-sm text-dk-5/80">Optional: set rotation (X, Y, Z degrees) per part. Parts not listed use global rotation from Settings.</p>
-                  <div className="max-h-80 overflow-y-auto space-y-3 border border-dk-3 rounded p-2 bg-dk-1">
-                    {wizardParts.length === 0 ? (
-                      <p className="text-sm text-dk-5/80">No parts loaded. Parts will use global rotation.</p>
-                    ) : (
-                      wizardPartsToShow.map((p) => {
-                        const rot = perPartRotation[p.ldraw_id] || { x: 0, y: 0, z: 0 }
-                        const hasPerPart = (rot.x != null && rot.x !== '') || (rot.y != null && rot.y !== '') || (rot.z != null && rot.z !== '')
-                        let rx = 0, ry = 0, rz = 0
-                        if (hasPerPart) {
-                          rx = Number(rot.x) || 0
-                          ry = Number(rot.y) || 0
-                          rz = Number(rot.z) || 0
-                        } else if (wizardGlobalSettings?.rotation_enabled) {
-                          rx = Number(wizardGlobalSettings.rotation_x) || 0
-                          ry = Number(wizardGlobalSettings.rotation_y) || 0
-                          rz = Number(wizardGlobalSettings.rotation_z) || 0
-                        } else if (wizardGlobalSettings?.default_orientation_match_preview !== false) {
-                          rx = -90
-                          ry = 0
-                          rz = 0
-                        }
-                        const previewUrl = `/api/parts/preview/${encodeURIComponent(p.ldraw_id)}?size=256&rotation_x=${rx}&rotation_y=${ry}&rotation_z=${rz}`
-                        return (
-                          <div key={p.ldraw_id} className="flex items-center gap-3 p-2 bg-white rounded border">
-                            <img src={previewUrl} alt="" className="w-20 h-20 object-contain bg-dk-2 rounded flex-shrink-0" onError={(e) => { e.target.style.display = 'none' }} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{p.ldraw_id} {p.name && `· ${p.name}`}</p>
-                              <div className="flex gap-2 mt-1">
-                                <input type="number" placeholder="X" value={rot.x || ''} onChange={(e) => setPartRotation(p.ldraw_id, 'x', e.target.value)} className="w-14 px-1 py-0.5 text-sm border rounded" />
-                                <input type="number" placeholder="Y" value={rot.y || ''} onChange={(e) => setPartRotation(p.ldraw_id, 'y', e.target.value)} className="w-14 px-1 py-0.5 text-sm border rounded" />
-                                <input type="number" placeholder="Z" value={rot.z || ''} onChange={(e) => setPartRotation(p.ldraw_id, 'z', e.target.value)} className="w-14 px-1 py-0.5 text-sm border rounded" />
+              {wizardStep === 3 && (() => {
+                const getDefaultRotation = () => {
+                  if (wizardGlobalSettings?.rotation_enabled) {
+                    return { rx: Number(wizardGlobalSettings.rotation_x) || 0, ry: Number(wizardGlobalSettings.rotation_y) || 0, rz: Number(wizardGlobalSettings.rotation_z) || 0 }
+                  }
+                  if (wizardGlobalSettings?.default_orientation_match_preview !== false) return { rx: -90, ry: 0, rz: 0 }
+                  return { rx: 0, ry: 0, rz: 0 }
+                }
+                const getEffectiveRotation = (part) => {
+                  const rot = perPartRotation[part.ldraw_id] || { x: 0, y: 0, z: 0 }
+                  const hasPerPart = (rot.x != null && rot.x !== '') || (rot.y != null && rot.y !== '') || (rot.z != null && rot.z !== '')
+                  if (hasPerPart) return { rx: Number(rot.x) || 0, ry: Number(rot.y) || 0, rz: Number(rot.z) || 0 }
+                  return getDefaultRotation()
+                }
+                const getPreviewRotation = (part) => previewRotationByPart[part.ldraw_id] ?? getDefaultRotation()
+                const rotationEqual = (a, b) => a.rx === b.rx && a.ry === b.ry && a.rz === b.rz
+                return (
+                  <div className="space-y-3">
+                    <p className="text-sm text-dk-5/80">Optional: set rotation (X, Y, Z degrees) per part. Parts not listed use global rotation from Settings. Click &quot;Update&quot; to refresh the preview after changing rotation.</p>
+                    <div className="max-h-80 overflow-y-auto space-y-3 border border-dk-3 rounded p-2 bg-dk-1">
+                      {wizardParts.length === 0 ? (
+                        <p className="text-sm text-dk-5/80">No parts loaded. Parts will use global rotation.</p>
+                      ) : (
+                        wizardPartsToShow.map((p) => {
+                          const rot = perPartRotation[p.ldraw_id] || { x: 0, y: 0, z: 0 }
+                          const effective = getEffectiveRotation(p)
+                          const previewRot = getPreviewRotation(p)
+                          const needsUpdate = !rotationEqual(effective, previewRot)
+                          const previewUrl = `/api/parts/preview/${encodeURIComponent(p.ldraw_id)}?size=256&rotation_x=${previewRot.rx}&rotation_y=${previewRot.ry}&rotation_z=${previewRot.rz}`
+                          return (
+                            <div key={p.ldraw_id} className="flex items-center gap-3 p-2 bg-white rounded border">
+                              <img src={previewUrl} alt="" className="w-20 h-20 object-contain bg-dk-2 rounded flex-shrink-0" onError={(e) => { e.target.style.display = 'none' }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{p.ldraw_id} {p.name && `· ${p.name}`}</p>
+                                <div className="flex gap-2 mt-1 flex-wrap items-center">
+                                  <input type="number" placeholder="X" value={rot.x || ''} onChange={(e) => setPartRotation(p.ldraw_id, 'x', e.target.value)} className="w-14 px-1 py-0.5 text-sm border rounded" />
+                                  <input type="number" placeholder="Y" value={rot.y || ''} onChange={(e) => setPartRotation(p.ldraw_id, 'y', e.target.value)} className="w-14 px-1 py-0.5 text-sm border rounded" />
+                                  <input type="number" placeholder="Z" value={rot.z || ''} onChange={(e) => setPartRotation(p.ldraw_id, 'z', e.target.value)} className="w-14 px-1 py-0.5 text-sm border rounded" />
+                                  {needsUpdate && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewRotationByPart(prev => ({ ...prev, [p.ldraw_id]: getEffectiveRotation(p) }))}
+                                      className="px-2 py-1 text-xs bg-mint text-dk-1 rounded hover:opacity-90"
+                                    >
+                                      Update preview
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
+                          )
+                        })
+                      )}
+                    </div>
                   {wizardParts.length > WIZARD_PARTS_PAGE_SIZE && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-dk-5/80">Page {wizardPartsPage} of {wizardPartsTotalPages}</span>
@@ -460,7 +475,8 @@ function ProjectDetailPage() {
                     </div>
                   )}
                 </div>
-              )}
+                )
+              })()}
               {wizardStep === 4 && (
                 <div className="space-y-3 text-sm text-dk-5">
                   {format3mf && <p><strong>Build plate:</strong> {plateWidth} × {plateDepth} mm</p>}

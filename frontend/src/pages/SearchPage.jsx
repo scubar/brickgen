@@ -121,7 +121,7 @@ function SearchPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-dk-2 border border-dk-3 rounded-lg p-6 mb-8">
-        <h2 className="text-2xl font-bold mb-4 text-dk-5">Search LEGO Sets</h2>
+        <h2 className="text-2xl font-bold mb-4 text-dk-5">Search sets</h2>
         <form onSubmit={(e) => handleSearch(e, 1)} className="flex gap-2 relative" ref={suggestRef}>
           <div className="flex-1 relative">
             <input

@@ -21,6 +21,7 @@ export default function CacheManagementContent() {
   const [previewPage, setPreviewPage] = useState(1)
   const [ldrawStats, setLdrawStats] = useState(null)
   const [clearingLdraw, setClearingLdraw] = useState(false)
+  const [downloadingLdraw, setDownloadingLdraw] = useState(false)
   const [searchHistory, setSearchHistory] = useState([])
   const [searchHistoryPage, setSearchHistoryPage] = useState(1)
   const [clearingSearchHistory, setClearingSearchHistory] = useState(false)
@@ -182,14 +183,24 @@ export default function CacheManagementContent() {
             <button onClick={async () => { if (!confirm('Clear all part preview images?')) return; setClearingPreviewCache(true); setPreviewPage(1); try { const r = await fetch('/api/parts/preview-cache', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchPreviewList(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingPreviewCache(false); } }} disabled={clearingPreviewCache} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingPreviewCache ? 'Clearing...' : 'Clear preview cache'}</button>
           </div>
         </CacheSection>
-        <CacheSection id="ldraw-cache" title="LDraw library" description="LDraw parts library on disk. Clearing removes it; it will be re-downloaded on next generation." thumbnailAlt="LDraw">
+        <CacheSection id="ldraw-cache" title="LDraw library" description="LDraw parts library on disk. Download on demand or clear to re-download on next generation." thumbnailAlt="LDraw">
           <div className="space-y-4">
             {ldrawStats && (
               <>
+                {!ldrawStats.exists && (
+                  <div className="p-3 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 text-sm">
+                    <p className="font-medium">LDraw library not downloaded</p>
+                    <p className="mt-1 text-dk-5/90">Part previews and STL generation will fail until the library is installed. Click &quot;Download LDraw library&quot; below (~40MB).
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-center justify-between"><span className="text-sm text-dk-5/80 font-medium">Status</span><span className={`px-2 py-1 rounded text-sm font-medium ${ldrawStats.exists ? 'bg-mint/20 text-mint' : 'bg-danger/20 text-danger'}`}>{ldrawStats.exists ? 'Downloaded' : 'Not downloaded'}</span></div>
-                {ldrawStats.exists && <div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-dk-5/80 font-medium">Part files</p><p className="text-xl font-bold text-dk-5">{ldrawStats.part_count?.toLocaleString() ?? '—'}</p></div><div><p className="text-dk-5/80 font-medium">Size</p><p className="text-xl font-bold text-dk-5">{ldrawStats.total_size_mb?.toFixed(2) ?? '—'} MB</p></div></div>}
+                {ldrawStats.exists && <div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-dk-5/80 font-medium">Part files</p><p className="text-xl font-bold text-dk-5">{ldrawStats.part_count?.toLocaleString() ?? '—'}</p></div><div><p className="text-dk-5/80 font-medium">Size</p><p className="text-xl font-bold text-dk-5">{ldrawStats.total_size_mb?.toFixed(2) ?? '—'} MB</p></div><div className="col-span-2"><p className="text-dk-5/80 font-medium">Version</p><p className="text-xl font-bold text-dk-5">{ldrawStats.version ?? '—'}</p></div></div>}
                 <p className="text-xs text-dk-5">Path: {ldrawStats.library_path}</p>
-                <button onClick={async () => { if (!confirm('Clear LDraw library? It will be re-downloaded (~40MB) on next generation.')) return; setClearingLdraw(true); try { const r = await fetch('/api/ldraw/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchLdrawStats(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingLdraw(false); } }} disabled={clearingLdraw || !ldrawStats?.exists} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingLdraw ? 'Clearing...' : 'Clear LDraw library'}</button>
+                <div className="flex flex-col gap-2">
+                  <button onClick={async () => { setDownloadingLdraw(true); setMessage(null); try { const r = await fetch('/api/ldraw/download', { method: 'POST' }); const d = await r.json(); if (!r.ok) throw new Error(d.detail || d.message || 'Download failed'); setMessage({ type: 'success', text: d.message }); await fetchLdrawStats(); } catch (e) { setMessage({ type: 'error', text: e.message || 'Download failed' }); } finally { setDownloadingLdraw(false); } }} disabled={downloadingLdraw || ldrawStats?.exists} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{downloadingLdraw ? 'Downloading...' : ldrawStats?.exists ? 'Already downloaded' : 'Download LDraw library'}</button>
+                  <button onClick={async () => { if (!confirm('Clear LDraw library? It will be re-downloaded on next generation.')) return; setClearingLdraw(true); try { const r = await fetch('/api/ldraw/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchLdrawStats(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingLdraw(false); } }} disabled={clearingLdraw || downloadingLdraw || !ldrawStats?.exists} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingLdraw ? 'Clearing...' : 'Clear LDraw library'}</button>
+                </div>
               </>
             )}
           </div>

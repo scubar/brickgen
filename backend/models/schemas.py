@@ -103,3 +103,4 @@ class LDrawCacheStats(BaseModel):
     part_count: int
     total_size_mb: float
     library_path: str
+    version: Optional[str] = None

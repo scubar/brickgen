@@ -243,7 +243,8 @@ async def get_ldraw_stats():
             exists=stats['exists'],
             part_count=stats['part_count'],
             total_size_mb=total_size_mb,
-            library_path=stats.get('path', str(manager.library_path))
+            library_path=stats.get('path', str(manager.library_path)),
+            version=stats.get('version'),
         )
     except Exception as e:
         logger.error(f"Error getting LDraw stats: {e}")
@@ -273,6 +274,30 @@ async def clear_ldraw():
         }
     except Exception as e:
         logger.error(f"Error clearing LDraw library: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ldraw/download")
+async def download_ldraw():
+    """Download LDraw library on demand (~40MB). Required for part previews and STL generation."""
+    try:
+        manager = LDrawManager()
+        if manager.get_library_stats().get("exists"):
+            return {
+                "success": True,
+                "message": "LDraw library already exists.",
+            }
+        ok = await manager.download_library()
+        if not ok:
+            raise HTTPException(status_code=500, detail="Failed to download LDraw library.")
+        return {
+            "success": True,
+            "message": "LDraw library downloaded successfully.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading LDraw library: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

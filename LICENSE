@@ -27,3 +27,6 @@ LEGO® is a trademark of the LEGO Group of companies which does not sponsor,
 authorize or endorse this software. This project is an independent tool for
 personal use only. Please respect LEGO's intellectual property rights and
 use this tool responsibly.
+
+THIRD-PARTY SOFTWARE:
+This distribution includes LDView (https://github.com/tcobbs/ldview) for LDraw-to-STL conversion. LDView is dual-licensed under GPL-2.0 or MIT by its authors; BrickGen distributes LDView under its MIT license option. LDView's copyright and license remain with its authors.

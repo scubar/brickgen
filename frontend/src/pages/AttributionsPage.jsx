@@ -4,7 +4,7 @@ function AttributionsPage() {
   const navigate = useNavigate()
   const items = [
     { name: 'LDraw', url: 'https://www.ldraw.org/', description: 'LEGO part library and format' },
-    { name: 'LDView', url: 'https://github.com/tcobbs/ldview', description: 'LDraw viewer and STL export' },
+    { name: 'LDView', url: 'https://github.com/tcobbs/ldview', description: 'LDraw viewer and STL export; included under its MIT license option' },
     { name: 'Rebrickable API', url: 'https://rebrickable.com/api/', description: 'LEGO set and parts data' },
     { name: 'FastAPI', url: 'https://fastapi.tiangolo.com/', description: 'Backend API framework' },
     { name: 'React', url: 'https://react.dev/', description: 'Frontend UI library' },

@@ -224,6 +224,20 @@ function SettingsPage() {
               </div>
 
               <div className="pt-6 border-t border-dk-3">
+                <h2 className="text-xl font-bold mb-4 text-dk-5">Part previews</h2>
+                <form onSubmit={handleSaveSettings} className="space-y-4">
+                  <label className="flex items-center gap-2 cursor-pointer text-dk-5">
+                    <input type="checkbox" checked={settings.auto_generate_part_previews !== false} onChange={(e) => handleChange('auto_generate_part_previews', e.target.checked)} className="w-5 h-5 rounded border-dk-3 text-mint focus:ring-mint" />
+                    <span>Auto-generate part previews</span>
+                  </label>
+                  <p className="text-sm text-dk-5/80 mt-1"><a href="/settings/cache#preview-cache" className="text-mint hover:underline">Manage part preview cache</a></p>
+                  <button type="submit" disabled={saving} className="px-6 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50 transition font-semibold">
+                    {saving ? 'Saving...' : 'Save settings'}
+                  </button>
+                </form>
+              </div>
+
+              <div className="pt-6 border-t border-dk-3">
                 <h2 className="text-xl font-bold mb-4 text-dk-5">System Paths</h2>
                 <div className="bg-dk-1 p-4 rounded space-y-3">
                   <div>
@@ -301,15 +315,6 @@ function SettingsPage() {
                   <h2 className="text-xl font-bold mb-4 text-dk-5">STL Scaling</h2>
                   <input type="number" step="0.01" value={settings.stl_scale_factor} onChange={(e) => handleChange('stl_scale_factor', e.target.value)} min={0.01} max={100} className="w-full max-w-xs px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
                   <p className="text-sm text-dk-5/80 mt-1">Default: 10 (LDView cm to mm). Changing clears STL cache.</p>
-                </div>
-
-                <div className="pt-6 border-t border-dk-3">
-                  <h2 className="text-xl font-bold mb-4 text-dk-5">Part previews</h2>
-                  <label className="flex items-center gap-2 cursor-pointer text-dk-5">
-                    <input type="checkbox" checked={settings.auto_generate_part_previews !== false} onChange={(e) => handleChange('auto_generate_part_previews', e.target.checked)} className="w-5 h-5 rounded border-dk-3 text-mint focus:ring-mint" />
-                    <span>Auto-generate part previews</span>
-                  </label>
-                  <p className="text-sm text-dk-5/80 mt-1"><a href="/settings/cache#preview-cache" className="text-mint hover:underline">Manage part preview cache</a></p>
                 </div>
 
                 <button type="submit" disabled={saving} className="w-full px-6 py-3 bg-mint text-dk-1 rounded-lg hover:opacity-90 disabled:opacity-50 font-semibold">

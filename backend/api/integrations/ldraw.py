@@ -1,6 +1,7 @@
 """LDraw library manager and STL converter."""
 import logging
 import asyncio
+import re
 from pathlib import Path
 from typing import Optional
 import aiohttp
@@ -9,6 +10,10 @@ import io
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
+
+LDRAW_VERSION_FILE = ".ldraw_version"
+LDRAW_UPDATES_URL = "https://library.ldraw.org/updates?latest"
+PARTS_UPDATE_PATTERN = re.compile(r"Parts Update\s+(\d{4}-\d{2})", re.IGNORECASE)
 
 
 class LDrawManager:
@@ -20,6 +25,19 @@ class LDrawManager:
         self.library_path = library_path or settings.ldraw_library_path
         self.parts_dir = self.library_path / "parts"
         self.p_dir = self.library_path / "p"
+    
+    async def _fetch_library_version(self) -> Optional[str]:
+        """Fetch current LDraw library release version from library.ldraw.org (e.g. 2025-10)."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(LDRAW_UPDATES_URL) as response:
+                    response.raise_for_status()
+                    text = await response.text()
+            m = PARTS_UPDATE_PATTERN.search(text)
+            return m.group(1) if m else None
+        except Exception as e:
+            logger.warning(f"Could not fetch LDraw library version: {e}")
+            return None
     
     async def ensure_library_exists(self) -> bool:
         """Check if LDraw library exists, download if not."""
@@ -47,6 +65,13 @@ class LDrawManager:
                     
                     # Extract in a thread to avoid blocking
                     await asyncio.to_thread(self._extract_zip, zip_data)
+            
+            # Record library version from updates page (e.g. 2025-10)
+            version = await self._fetch_library_version()
+            if version:
+                version_file = self.library_path / LDRAW_VERSION_FILE
+                version_file.write_text(version, encoding="utf-8")
+                logger.info(f"LDraw library version recorded: {version}")
             
             logger.info("LDraw library downloaded and extracted successfully")
             return True
@@ -118,9 +143,17 @@ class LDrawManager:
             return {"exists": False, "part_count": 0}
         
         part_count = len(list(self.parts_dir.glob("*.dat")))
+        version = None
+        version_file = self.library_path / LDRAW_VERSION_FILE
+        if version_file.exists():
+            try:
+                version = version_file.read_text(encoding="utf-8").strip() or None
+            except Exception:
+                pass
         
         return {
             "exists": True,
             "part_count": part_count,
-            "path": str(self.library_path)
+            "path": str(self.library_path),
+            "version": version,
         }

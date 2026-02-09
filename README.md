@@ -230,7 +230,9 @@ MIT License - see LICENSE file for details
 - [LDraw](https://www.ldraw.org/) - LEGO CAD parts library
 - [LDView](https://github.com/tcobbs/ldview) - LDraw viewer and STL export (included under its MIT license option)
 - [Rebrickable](https://rebrickable.com/) - LEGO set search and parts inventory
-- [lib3mf](https://github.com/3MFConsortium/lib3mf) - 3MF file format library
+- [3MF specification](https://3mf.io/specification/) - 3MF file format (BrickGen generates 3MF in-house; no lib3mf dependency)
+
+For the full list of third-party software and licenses, see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
 ## Disclaimer
 

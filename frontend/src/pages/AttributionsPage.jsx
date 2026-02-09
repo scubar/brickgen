@@ -9,13 +9,14 @@ function AttributionsPage() {
     { name: 'FastAPI', url: 'https://fastapi.tiangolo.com/', description: 'Backend API framework' },
     { name: 'React', url: 'https://react.dev/', description: 'Frontend UI library' },
     { name: 'Vite', url: 'https://vitejs.dev/', description: 'Frontend build tool' },
+    { name: 'TailwindCSS', url: 'https://tailwindcss.com/', description: 'Frontend styling' },
   ]
 
   return (
     <div className="max-w-2xl mx-auto">
       <button onClick={() => navigate(-1)} className="mb-4 px-4 py-2 bg-dk-3 text-dk-5 rounded hover:bg-mint hover:text-dk-1 transition">← Back</button>
       <h1 className="text-2xl font-bold mb-6 text-dk-5">Attributions</h1>
-      <p className="text-dk-5/80 mb-6">This product uses the following third-party software and services.</p>
+      <p className="text-dk-5/80 mb-6">This product uses the following third-party software and services. For the full list and licenses, see ATTRIBUTIONS.md in the repository.</p>
       <ul className="space-y-4">
         {items.map((item) => (
           <li key={item.name} className="bg-dk-2 border border-dk-3 rounded-lg p-4">

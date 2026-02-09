@@ -38,6 +38,7 @@ class GenerateRequest(BaseModel):
     generate_3mf: bool = Field(default=True)
     generate_stl: bool = Field(default=True)
     project_id: Optional[str] = None
+    scale_factor: Optional[float] = Field(None, ge=0.01, le=100.0)
 
     @model_validator(mode="after")
     def at_least_one_output(self):

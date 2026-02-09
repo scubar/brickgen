@@ -1,7 +1,33 @@
 """Unit tests for backend.core.stl_processing."""
 import pytest
 
-from backend.core.stl_processing import STLConverter
+from backend.core.stl_processing import STLConverter, _cache_filename
+
+
+class TestCacheFilename:
+    """Tests for _cache_filename (omit 0/false for shorter names)."""
+
+    def test_part_only_scale_zero(self):
+        assert _cache_filename("3404", 0, False, 0, 0, 0) == "3404"
+
+    def test_part_and_scale(self):
+        assert _cache_filename("3404", 10, False, 0, 0, 0) == "3404_scale10"
+
+    def test_rotation_enabled_zero_angles(self):
+        assert _cache_filename("3404", 10, True, 0, 0, 0) == "3404_scale10_rotation1"
+
+    def test_rotation_enabled_with_x(self):
+        assert _cache_filename("3404", 10, True, 233, 0, 0) == "3404_scale10_rotation1_rotationX233"
+
+    def test_rotation_enabled_x_y_z(self):
+        s = _cache_filename("3404", 10, True, 233, 45, 90)
+        assert s == "3404_scale10_rotation1_rotationX233_rotationY45_rotationZ90"
+
+    def test_omit_zero_angles(self):
+        s = _cache_filename("3005", 10, True, -90, 0, 0)
+        assert "rotationX-90" in s
+        assert "rotationY" not in s
+        assert "rotationZ" not in s
 
 
 class TestSTLConverterRotationSuffix:

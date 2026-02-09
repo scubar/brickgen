@@ -1,6 +1,6 @@
 """Database models and session management."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float, UniqueConstraint, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from backend.config import settings
@@ -79,13 +79,25 @@ class SearchHistory(Base):
 
 
 class STLCache(Base):
-    """Cache for converted STL files."""
+    """Cache for converted STL files. Key: (part_num, scale, rotation_enabled, rotation_x, rotation_y, rotation_z)."""
     __tablename__ = "stl_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "part_num", "scale", "rotation_enabled",
+            "rotation_x", "rotation_y", "rotation_z",
+            name="uq_stl_cache_key"
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
-    part_num = Column(String, unique=True, index=True)
+    part_num = Column(String, index=True)
     file_path = Column(String)
     file_size = Column(Integer)
+    rotation_enabled = Column(Boolean, default=False)
+    rotation_x = Column(Float, default=0.0)
+    rotation_y = Column(Float, default=0.0)
+    rotation_z = Column(Float, default=0.0)
+    scale = Column(Float, default=10.0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -117,6 +129,50 @@ def init_db():
                 conn.commit()
             if "log" not in cols:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN log TEXT"))
+                conn.commit()
+
+    # stl_cache: add rotation/scale columns if missing; then recreate table for composite unique
+    if "stl_cache" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("stl_cache")}
+        new_cols = ("rotation_enabled", "rotation_x", "rotation_y", "rotation_z", "scale")
+        added_any = False
+        with engine.connect() as conn:
+            for col in new_cols:
+                if col not in cols:
+                    if col == "rotation_enabled":
+                        conn.execute(text("ALTER TABLE stl_cache ADD COLUMN rotation_enabled BOOLEAN DEFAULT 0"))
+                    elif col in ("rotation_x", "rotation_y", "rotation_z", "scale"):
+                        default = 10.0 if col == "scale" else 0.0
+                        conn.execute(text(f"ALTER TABLE stl_cache ADD COLUMN {col} FLOAT DEFAULT {default}"))
+                    else:
+                        conn.execute(text(f"ALTER TABLE stl_cache ADD COLUMN {col} FLOAT DEFAULT 0"))
+                    conn.commit()
+                    added_any = True
+            if added_any:
+                # Recreate table so we can have composite unique (SQLite cannot add constraint via ALTER)
+                conn.execute(text("""
+                    CREATE TABLE stl_cache_new (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        part_num VARCHAR,
+                        file_path VARCHAR,
+                        file_size INTEGER,
+                        rotation_enabled BOOLEAN DEFAULT 0,
+                        rotation_x FLOAT DEFAULT 0,
+                        rotation_y FLOAT DEFAULT 0,
+                        rotation_z FLOAT DEFAULT 0,
+                        scale FLOAT DEFAULT 10,
+                        created_at DATETIME,
+                        UNIQUE(part_num, scale, rotation_enabled, rotation_x, rotation_y, rotation_z)
+                    )
+                """))
+                conn.execute(text("""
+                    INSERT INTO stl_cache_new (id, part_num, file_path, file_size, rotation_enabled, rotation_x, rotation_y, rotation_z, scale, created_at)
+                    SELECT id, part_num, file_path, file_size,
+                           COALESCE(rotation_enabled, 0), COALESCE(rotation_x, 0), COALESCE(rotation_y, 0), COALESCE(rotation_z, 0), COALESCE(scale, 10), created_at
+                    FROM stl_cache
+                """))
+                conn.execute(text("DROP TABLE stl_cache"))
+                conn.execute(text("ALTER TABLE stl_cache_new RENAME TO stl_cache"))
                 conn.commit()
 
 

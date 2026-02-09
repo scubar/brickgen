@@ -15,7 +15,7 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 ## Technology Stack
 
 **Backend:**
-- Python 3.11+ with FastAPI
+- Python 3.13+ with FastAPI
 - SQLite for caching and job tracking
 - LDView CLI tool for LDraw → STL conversion
 - LDraw parts library (10,000+ LEGO parts)
@@ -127,6 +127,11 @@ Or activate the virtual environment from project root:
 pipenv shell --path backend
 # from project root (brickgen/)
 uvicorn backend.main:app --reload
+```
+
+**Run tests:** (use the venv; do not use `--system` locally)
+```bash
+pipenv run --path backend python -m pytest backend/tests -v --tb=short
 ```
 
 **Frontend:**

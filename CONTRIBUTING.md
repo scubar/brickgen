@@ -6,7 +6,7 @@ Thank you for your interest in contributing to BrickGen! This document provides 
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.13 or higher
 - Node.js 18 or higher
 - Docker and Docker Compose (for containerized development)
 

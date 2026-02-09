@@ -81,7 +81,7 @@ frontend/src/
 
 ### Backend (FastAPI)
 
-**Technology**: Python 3.11 + FastAPI + SQLAlchemy
+**Technology**: Python 3.13 + FastAPI + SQLAlchemy
 
 **Structure**:
 ```

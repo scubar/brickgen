@@ -28,6 +28,7 @@ router = APIRouter()
 # In-memory job progress (single-process). Key: job_id. Value: status, progress, error_message, log.
 # Multi-worker deployments would not share this store.
 _job_progress: Dict[str, Dict[str, Any]] = {}
+_job_progress_lock = threading.Lock()
 
 # WebSocket: job_id -> list of connected WebSockets. Progress updates are pushed via _progress_queue.
 _ws_subscribers: Dict[str, List[Any]] = {}
@@ -36,15 +37,16 @@ _progress_queue: queue.Queue = queue.Queue()
 
 def get_job_progress_overlay(job_id: str) -> Optional[Dict[str, Any]]:
     """Return overlay dict (status, progress, error_message, log) for a running job, or None."""
-    entry = _job_progress.get(job_id)
-    if not entry:
-        return None
-    return {
-        "status": entry["status"],
-        "progress": entry["progress"],
-        "error_message": entry.get("error_message"),
-        "log": entry.get("log"),
-    }
+    with _job_progress_lock:
+        entry = _job_progress.get(job_id)
+        if not entry:
+            return None
+        return {
+            "status": entry["status"],
+            "progress": entry["progress"],
+            "error_message": entry.get("error_message"),
+            "log": entry.get("log"),
+        }
 
 
 def _last_log_line(full_log: Optional[str]) -> Optional[str]:
@@ -58,28 +60,29 @@ def _last_log_line(full_log: Optional[str]) -> Optional[str]:
 def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Optional[int] = None,
                       error_message: Optional[str] = None, log: Optional[str] = None) -> None:
     """Update in-memory progress (no DB commit). Also enqueues payload for WebSocket broadcast."""
-    if job_id not in _job_progress:
-        _job_progress[job_id] = {
-            "status": "processing",
-            "progress": 0,
-            "error_message": None,
-            "log": None,
+    with _job_progress_lock:
+        if job_id not in _job_progress:
+            _job_progress[job_id] = {
+                "status": "processing",
+                "progress": 0,
+                "error_message": None,
+                "log": None,
+            }
+        entry = _job_progress[job_id]
+        if status is not None:
+            entry["status"] = status
+        if progress is not None:
+            entry["progress"] = progress
+        if error_message is not None:
+            entry["error_message"] = error_message
+        if log is not None:
+            entry["log"] = log
+        payload = {
+            "status": entry["status"],
+            "progress": entry["progress"],
+            "error_message": entry.get("error_message"),
+            "log": _last_log_line(entry.get("log")),
         }
-    entry = _job_progress[job_id]
-    if status is not None:
-        entry["status"] = status
-    if progress is not None:
-        entry["progress"] = progress
-    if error_message is not None:
-        entry["error_message"] = error_message
-    if log is not None:
-        entry["log"] = log
-    payload = {
-        "status": entry["status"],
-        "progress": entry["progress"],
-        "error_message": entry.get("error_message"),
-        "log": _last_log_line(entry.get("log")),
-    }
     try:
         _progress_queue.put_nowait((job_id, payload))
     except queue.Full:
@@ -88,7 +91,8 @@ def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Op
 
 def _remove_job_progress(job_id: str) -> None:
     """Remove job from in-memory store (call when job completes or fails)."""
-    _job_progress.pop(job_id, None)
+    with _job_progress_lock:
+        _job_progress.pop(job_id, None)
 
 
 async def broadcast_progress_task() -> None:

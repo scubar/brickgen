@@ -67,6 +67,7 @@ def upgrade() -> None:
         sa.Column("set_num", sa.String(), nullable=True),
         sa.Column("status", sa.String(), nullable=True),
         sa.Column("progress", sa.Integer(), nullable=True),
+        sa.Column("plate_height", sa.Integer(), nullable=True),
         sa.Column("plate_width", sa.Integer(), nullable=True),
         sa.Column("plate_depth", sa.Integer(), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
@@ -111,7 +112,7 @@ def upgrade() -> None:
         "INSERT INTO app_settings (id, default_plate_width, default_plate_depth, default_plate_height, part_spacing, "
         "stl_scale_factor, rotation_enabled, rotation_x, rotation_y, rotation_z, "
         "default_orientation_match_preview, auto_generate_part_previews, updated_at) "
-        "VALUES (1, 220, 220, 250, 2, 1.0, 0, 0.0, 0.0, 0.0, 1, 1, CURRENT_TIMESTAMP)"
+        "VALUES (1, 250, 250, 250, 2, 1.0, 0, 0.0, 0.0, 0.0, 1, 1, CURRENT_TIMESTAMP)"
     )
 
     op.create_table(

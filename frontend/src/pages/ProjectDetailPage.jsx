@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 
-const WIZARD_STEPS = ['Output format', 'Build plate', 'Options', 'Rotation per part', 'Confirm']
+const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
 function ProjectDetailPage() {
   const { projectId } = useParams()
@@ -13,8 +13,9 @@ function ProjectDetailPage() {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardStep, setWizardStep] = useState(0)
   const [creatingJob, setCreatingJob] = useState(false)
-  const [plateWidth, setPlateWidth] = useState(220)
-  const [plateDepth, setPlateDepth] = useState(220)
+  const [plateWidth, setPlateWidth] = useState(250)
+  const [plateDepth, setPlateDepth] = useState(250)
+  const [plateHeight, setPlateHeight] = useState(250)
   const [scaleFactor, setScaleFactor] = useState(null) // null = use global default
   const [format3mf, setFormat3mf] = useState(true)
   const [formatStl, setFormatStl] = useState(true)
@@ -140,6 +141,7 @@ function ProjectDetailPage() {
         setWizardGlobalSettings(s)
         setPlateWidth(s.default_plate_width ?? 220)
         setPlateDepth(s.default_plate_depth ?? 220)
+        setPlateHeight(s.default_plate_height ?? 250)
         setScaleFactor(null) // use global default for new job
       }
       if (partsRes?.ok) {
@@ -186,6 +188,7 @@ function ProjectDetailPage() {
         body: JSON.stringify({
           plate_width: plateWidth,
           plate_depth: plateDepth,
+          plate_height: plateHeight,
           generate_3mf: format3mf,
           generate_stl: formatStl,
           bypass_cache: bypassCache,
@@ -435,27 +438,23 @@ function ProjectDetailPage() {
                     </label>
                   </div>
                   {!format3mf && !formatStl && <p className="text-sm text-danger">Select at least one output type.</p>}
-                  {wizardGlobalSettings && (
-                    <div className="bg-dk-1 border border-dk-3 rounded p-3 text-sm text-dk-5">
-                      <p className="font-medium mb-1">Current global settings (read-only)</p>
-                      <p>Scale: {formatScale(wizardGlobalSettings.stl_scale_factor)} (1.0 = normal, 10 mm per LDraw unit)</p>
-                      <p>Rotation: {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
-                      <button type="button" onClick={() => { setWizardOpen(false); navigate('/settings'); }} className="text-mint hover:underline mt-1">Change in Settings</button>
-                    </div>
-                  )}
                 </div>
               )}
               {wizardStep === 1 && (
                 <div className="space-y-4">
                   <p className="text-sm text-dk-5">Set your build plate size (from global settings by default). Only used for 3MF output.</p>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-sm font-medium mb-1 text-dk-5">Plate width (mm)</label>
+                      <label className="block text-sm font-medium mb-1 text-dk-4">Plate width (mm)</label>
                       <input type="number" value={plateWidth} onChange={(e) => setPlateWidth(Number(e.target.value))} min={100} max={2000} className="w-full px-3 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1 text-dk-5">Plate depth (mm)</label>
+                      <label className="block text-sm font-medium mb-1 text-dk-4">Plate depth (mm)</label>
                       <input type="number" value={plateDepth} onChange={(e) => setPlateDepth(Number(e.target.value))} min={100} max={2000} className="w-full px-3 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-dk-4">Plate height (mm)</label>
+                      <input type="number" value={plateHeight} onChange={(e) => setPlateHeight(Number(e.target.value))} min={100} max={2000} className="w-full px-3 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
                     </div>
                   </div>
                 </div>
@@ -468,7 +467,7 @@ function ProjectDetailPage() {
                   </label>
                   <p className="text-sm text-dk-5/80">Leave unchecked to use cached STLs when possible.</p>
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-dk-5">STL scale factor (optional)</label>
+                    <label className="block text-sm font-medium mb-1 text-dk-5">Current Job STL scale factor (optional)</label>
                     <input
                       type="number"
                       step="0.1"
@@ -479,14 +478,8 @@ function ProjectDetailPage() {
                       onChange={(e) => setScaleFactor(e.target.value === '' ? null : Number(e.target.value))}
                       className="w-full px-3 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5"
                     />
-                    <p className="text-xs text-dk-5/70 mt-1">Leave empty to use global default. 1.0 = normal (10 mm per LDraw unit).</p>
+                    <p className="text-xs text-dk-5/70 mt-1">Leave empty to use global default.</p>
                   </div>
-                  {wizardGlobalSettings && (
-                    <div className="bg-dk-1 border border-dk-3 rounded p-3 text-sm text-dk-5">
-                      <p className="font-medium mb-1">Rotation (read-only)</p>
-                      <p>Rotation: {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
-                    </div>
-                  )}
                 </div>
               )}
               {wizardStep === 3 && (() => {
@@ -557,14 +550,14 @@ function ProjectDetailPage() {
               })()}
               {wizardStep === 4 && (
                 <div className="space-y-3 text-sm text-dk-5">
-                  {format3mf && <p><strong>Build plate:</strong> {plateWidth} × {plateDepth} mm</p>}
+                  {format3mf && <p><strong>Build plate:</strong> {plateWidth}mm x {plateDepth}mm x {plateHeight}mm</p>}
                   <p><strong>Output:</strong> {[format3mf && '3MF', formatStl && 'STL (in stls/)'].filter(Boolean).join(', ') || 'None'}</p>
                   <p><strong>Bypass cache:</strong> {bypassCache ? 'Yes' : 'No'}</p>
                   {Object.keys(perPartRotation).length > 0 && (
                     <p><strong>Per-part rotation:</strong> {Object.keys(perPartRotation).length} part(s) customized</p>
                   )}
                   {wizardGlobalSettings && (
-                    <p><strong>Scale:</strong> {scaleFactor != null ? formatScale(scaleFactor) : `Default ${formatScale(wizardGlobalSettings?.stl_scale_factor)}`} · <strong>Rotation:</strong> {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
+                    <p><strong>Scale:</strong> {scaleFactor != null ? formatScale(scaleFactor) : `Default ${formatScale(wizardGlobalSettings?.stl_scale_factor)}`} · <strong>Global Rotation:</strong> {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
                   )}
                 </div>
               )}

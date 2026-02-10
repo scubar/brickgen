@@ -8,12 +8,14 @@ services:
     container_name: brickgen
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     volumes:
       - ldraw-data:/app/data/ldraw
       - stl-cache:/app/cache
       - database:/app/database
+    # Do not set REBRICKABLE_API_KEY here so env_file: .env can provide it (environment: overrides env_file)
     environment:
-      - REBRICKABLE_API_KEY=${REBRICKABLE_API_KEY:-}
       - DEFAULT_PLATE_WIDTH=${DEFAULT_PLATE_WIDTH:-220}
       - DEFAULT_PLATE_DEPTH=${DEFAULT_PLATE_DEPTH:-220}
       - DEFAULT_PLATE_HEIGHT=${DEFAULT_PLATE_HEIGHT:-250}

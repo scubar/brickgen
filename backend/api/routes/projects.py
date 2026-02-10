@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db, Project, Job
 from backend.config import settings
 from backend.version import __version__
-from backend.api.routes.generate import get_job_progress_overlay, _start_generation_thread
+from backend.api.routes.generate import get_job_progress_overlay, _last_log_line, _start_generation_thread
 import json
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ async def list_project_jobs(project_id: str, db: Session = Depends(get_db)):
                 error_message=overlay.get("error_message"),
                 output_file=j.output_file,
                 brickgen_version=j.brickgen_version,
-                log=overlay.get("log"),
+                log=_last_log_line(overlay.get("log")),
                 created_at=j.created_at.isoformat() if j.created_at else "",
                 updated_at=j.updated_at.isoformat() if j.updated_at else ""
             ))

@@ -77,7 +77,7 @@ function ProjectDetailPage() {
     setColorRefPage(1)
   }, [project?.set_num])
 
-  // Poll job status every 2 seconds while a job is running
+  // Poll in-memory progress (no DB) while job is running; fall back to full job endpoint when not in progress
   const activeJobIdRef = useRef(null)
   activeJobIdRef.current = activeJobId
   useEffect(() => {
@@ -86,26 +86,44 @@ function ProjectDetailPage() {
       const currentId = activeJobIdRef.current
       if (!currentId) return
       try {
-        const r = await fetch(`/api/jobs/${currentId}`)
-        if (!r.ok) return
-        const j = await r.json()
-        const jobId = j.job_id ?? currentId
-        setJobs(prev => {
-          const idx = prev.findIndex(job => job.job_id === jobId)
-          const updated = { status: j.status, progress: j.progress, error_message: j.error_message, output_file: j.output_file, log: j.log }
-          if (idx >= 0) {
-            return prev.map((job, i) => i === idx ? { ...job, ...updated } : job)
+        const progressRes = await fetch(`/api/jobs/${currentId}/progress`)
+        if (progressRes.ok) {
+          const p = await progressRes.json()
+          setJobs(prev => {
+            const idx = prev.findIndex(job => job.job_id === currentId)
+            const updated = { status: p.status, progress: p.progress, error_message: p.error_message ?? null, log: p.log ?? null }
+            if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
+            return [{ job_id: currentId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
+          })
+          if (p.status === 'completed' || p.status === 'failed') {
+            const fullRes = await fetch(`/api/jobs/${currentId}`)
+            if (fullRes.ok) {
+              const j = await fullRes.json()
+              setJobs(prev => prev.map(job => job.job_id === currentId ? { ...job, ...j, job_id: j.job_id ?? currentId } : job))
+            }
+            setActiveJobId(null)
+            await fetchJobs()
           }
-          return [{ job_id: jobId, set_num: j.set_num ?? '', ...updated, brickgen_version: j.brickgen_version ?? null, created_at: j.created_at ?? '', updated_at: j.updated_at ?? '' }, ...prev]
-        })
-        if (j.status === 'completed' || j.status === 'failed') {
-          setActiveJobId(null)
+          return
         }
-        await fetchJobs()
+        if (progressRes.status === 404) {
+          const fullRes = await fetch(`/api/jobs/${currentId}`)
+          if (!fullRes.ok) return
+          const j = await fullRes.json()
+          const jobId = j.job_id ?? currentId
+          setJobs(prev => {
+            const idx = prev.findIndex(job => job.job_id === jobId)
+            const updated = { status: j.status, progress: j.progress, error_message: j.error_message, output_file: j.output_file, log: j.log }
+            if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
+            return [{ job_id: jobId, set_num: j.set_num ?? '', ...updated, brickgen_version: j.brickgen_version ?? null, created_at: j.created_at ?? '', updated_at: j.updated_at ?? '' }, ...prev]
+          })
+          if (j.status === 'completed' || j.status === 'failed') setActiveJobId(null)
+          await fetchJobs()
+        }
       } catch (e) {
         console.error(e)
       }
-    }, 2000)
+    }, 500)
     return () => clearInterval(interval)
   }, [activeJobId, projectId])
 
@@ -388,14 +406,20 @@ function ProjectDetailPage() {
         ) : (
           <ul className="divide-y divide-dk-3">
             {jobs.map((j) => (
-              <li key={j.job_id} className="py-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <span className="font-medium text-dk-5">{j.job_id.slice(0, 8)}…</span>
-                    <span className={`ml-2 px-2 py-0.5 rounded text-sm ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
-                    {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
-                      <span className="ml-2 text-amber-400 text-xs">(different version)</span>
-                    )}
+              <li key={j.job_id} className="py-4 first:pt-0">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>{j.job_id.slice(0, 8)}…</code>
+                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
+                      {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
+                        <span className="text-amber-400 text-xs">(different version)</span>
+                      )}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-dk-5/80">
+                      <span>Created {new Date(j.created_at).toLocaleString()}</span>
+                      {j.brickgen_version && <span>BrickGen {j.brickgen_version}</span>}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {j.status === 'completed' && j.output_file && (
@@ -417,6 +441,14 @@ function ProjectDetailPage() {
                     <div className="w-full bg-dk-3 rounded-full h-1.5">
                       <div className="bg-mint h-1.5 rounded-full transition-all" style={{ width: `${j.progress}%` }} />
                     </div>
+                    {j.log && (
+                      <p className="mt-1.5 text-xs font-mono text-dk-5/90 truncate" title={j.log.trim()}>
+                        {(() => {
+                          const lines = j.log.trim().split(/\r?\n/).filter(Boolean)
+                          return lines.length ? lines[lines.length - 1] : j.log.trim()
+                        })()}
+                      </p>
+                    )}
                   </div>
                 )}
                 {j.status === 'failed' && j.error_message && (

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from backend.models.schemas import GenerateRequest, JobStatus
+from backend.models.schemas import GenerateRequest, JobProgress, JobStatus
 from backend.api.integrations.rebrickable import RebrickableClient
 from backend.api.integrations.ldraw import LDrawManager
 from backend.core.stl_processing import STLConverter
@@ -40,6 +40,14 @@ def get_job_progress_overlay(job_id: str) -> Optional[Dict[str, Any]]:
         "error_message": entry.get("error_message"),
         "log": entry.get("log"),
     }
+
+
+def _last_log_line(full_log: Optional[str]) -> Optional[str]:
+    """Return only the latest log line for API responses (smaller poll payload)."""
+    if not full_log or not full_log.strip():
+        return None
+    lines = [ln.strip() for ln in full_log.splitlines() if ln.strip()]
+    return lines[-1] if lines else full_log.strip()
 
 
 def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Optional[int] = None,
@@ -128,7 +136,8 @@ async def process_generation(
             logger.error(f"Job {job_id} not found")
             return
         db.commit()  # release read transaction so polling/other requests can use the DB
-        _set_job_progress(job_id, status="processing", progress=5)
+        job_log.append("Checking LDraw library...")
+        _set_job_progress(job_id, status="processing", progress=5, log="\n".join(job_log))
         
         # Step 1: Ensure LDraw library exists
         logger.info(f"Job {job_id}: Checking LDraw library")
@@ -145,7 +154,8 @@ async def process_generation(
             _remove_job_progress(job_id)
             return
         
-        _set_job_progress(job_id, progress=10)
+        job_log.append("Fetching parts list...")
+        _set_job_progress(job_id, progress=10, log="\n".join(job_log))
         
         # Step 2: Get parts list from Rebrickable (use cache to avoid repeat API calls)
         logger.info(f"Job {job_id}: Fetching parts list for set {set_num}")
@@ -202,12 +212,15 @@ async def process_generation(
 
         stl_files = []
         converted_count = 0
-        total_parts = sum(p['quantity'] for p in parts)
+        total_parts = len(parts)
+        total_instances = sum(p['quantity'] for p in parts)
 
-        for part in parts:
+        for part_index, part in enumerate(parts):
             ldraw_id = part.get('ldraw_id')
             part_num = part['part_num']
             quantity = part['quantity']
+
+            job_log.append(f"Converting part {part_index + 1}/{total_parts}: {ldraw_id or part_num}")
 
             if not ldraw_id:
                 line = f"No LDraw ID for part {part_num}, skipping"
@@ -251,9 +264,8 @@ async def process_generation(
                 logger.warning(line)
                 job_log.append(line)
             
-            # Update progress (in-memory only)
-            progress = 20 + int((converted_count / total_parts) * 50)
-            _set_job_progress(job_id, progress=min(progress, 70))
+            progress = 20 + int((converted_count / total_instances) * 50) if total_instances else 20
+            _set_job_progress(job_id, progress=min(progress, 70), log="\n".join(job_log))
             db.commit()  # release after each part so polling/other requests are not blocked
         if not stl_files:
             log_str = "\n".join(job_log) if job_log else None
@@ -268,7 +280,8 @@ async def process_generation(
             return
         
         logger.info(f"Job {job_id}: Converted {len(stl_files)} part instances")
-        _set_job_progress(job_id, progress=75)
+        job_log.append("Building output (3MF / ZIP)...")
+        _set_job_progress(job_id, progress=75, log="\n".join(job_log))
         
         # Step 4: Build output per options (3MF and/or STL; STLs go in stls/ subdir when in ZIP)
         output_filename = None
@@ -277,7 +290,8 @@ async def process_generation(
 
         if generate_3mf:
             logger.info(f"Job {job_id}: Generating 3MF")
-            _set_job_progress(job_id, progress=80)
+            job_log.append("Generating 3MF...")
+            _set_job_progress(job_id, progress=80, log="\n".join(job_log))
             try:
                 unique_parts = {}
                 for stl_path, ldraw_id, color_rgb in stl_files:
@@ -307,6 +321,18 @@ async def process_generation(
                 generate_3mf = False
 
         if need_zip:
+            # Log total size of files to zip so the user sees why this phase can take a while
+            num_files = (1 if (generate_3mf and threemf_path.exists()) else 0) + (len(stl_files) if generate_stl else 0)
+            total_bytes = 0
+            if generate_3mf and threemf_path.exists():
+                total_bytes += threemf_path.stat().st_size
+            for stl_path, _, _ in stl_files:
+                if stl_path.exists():
+                    total_bytes += stl_path.stat().st_size
+            size_mb = total_bytes / (1024 * 1024)
+            size_str = f"{size_mb:.1f} MB" if size_mb >= 0.01 else f"{total_bytes} B"
+            job_log.append(f"Creating ZIP: {num_files} files ({size_str})...")
+            _set_job_progress(job_id, progress=82, log="\n".join(job_log))
             logger.info(f"Job {job_id}: Creating ZIP (3MF={generate_3mf}, STL in stls/={generate_stl})")
             zip_filename = f"{job_id}.zip"
             zip_path = settings.output_dir / zip_filename
@@ -328,6 +354,16 @@ async def process_generation(
                         threemf_path.unlink()
                     except OSError:
                         pass
+                # Log final ZIP size and compression ratio
+                zip_size = zip_path.stat().st_size
+                zip_mb = zip_size / (1024 * 1024)
+                zip_size_str = f"{zip_mb:.1f} MB" if zip_mb >= 0.01 else f"{zip_size} B"
+                if total_bytes > 0:
+                    reduction = (1 - zip_size / total_bytes) * 100
+                    job_log.append(f"ZIP created: {zip_size_str} ({reduction:.0f}% reduction)")
+                else:
+                    job_log.append(f"ZIP created: {zip_size_str}")
+                _set_job_progress(job_id, progress=90, log="\n".join(job_log))
             except Exception as e:
                 logger.error(f"Job {job_id}: Failed to create ZIP: {e}")
                 log_str = "\n".join(job_log) if job_log else None
@@ -343,7 +379,8 @@ async def process_generation(
         else:
             output_filename = f"{job_id}.3mf"
 
-        _set_job_progress(job_id, progress=95)
+        job_log.append("Finalizing...")
+        _set_job_progress(job_id, progress=95, log="\n".join(job_log))
 
         # Complete the job: single DB commit with final state
         log_str = "\n".join(job_log) if job_log else None
@@ -439,26 +476,26 @@ async def generate_3mf(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/jobs/{job_id}/progress", response_model=JobProgress)
+async def get_job_progress(job_id: str):
+    """Get in-memory progress for a running job only. No database access. Returns 404 if job is not in progress."""
+    overlay = get_job_progress_overlay(job_id)
+    if not overlay:
+        raise HTTPException(status_code=404, detail="Job not in progress")
+    return JobProgress(
+        status=overlay["status"],
+        progress=overlay["progress"],
+        error_message=overlay.get("error_message"),
+        log=_last_log_line(overlay.get("log")),
+    )
+
+
 @router.get("/jobs/{job_id}", response_model=JobStatus)
 async def get_job_status(job_id: str, db: Session = Depends(get_db)):
-    """Get status of a generation job."""
+    """Get full job record from the database. For live progress of a running job, use GET /jobs/{id}/progress instead."""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    overlay = get_job_progress_overlay(job_id)
-    if overlay:
-        return JobStatus(
-            job_id=job.id,
-            set_num=job.set_num,
-            status=overlay["status"],
-            progress=overlay["progress"],
-            error_message=overlay.get("error_message"),
-            output_file=job.output_file,
-            brickgen_version=job.brickgen_version,
-            log=overlay.get("log"),
-            created_at=job.created_at,
-            updated_at=job.updated_at
-        )
     return JobStatus(
         job_id=job.id,
         set_num=job.set_num,

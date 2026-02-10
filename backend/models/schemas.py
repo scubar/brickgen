@@ -54,6 +54,14 @@ class JobStatus(BaseModel):
     updated_at: datetime
 
 
+class JobProgress(BaseModel):
+    """In-memory progress for a running job (no DB). Returned by GET /jobs/{id}/progress."""
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    log: Optional[str] = None  # latest log line only
+
+
 class SettingsResponse(BaseModel):
     """Application settings."""
     default_plate_width: int

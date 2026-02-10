@@ -60,6 +60,7 @@ class Job(Base):
     progress = Column(Integer, default=0)  # 0-100
     plate_width = Column(Integer)
     plate_depth = Column(Integer)
+    plate_height = Column(Integer, nullable=True)  # stored for reference; placement uses only width/depth
     error_message = Column(Text, nullable=True)
     output_file = Column(String, nullable=True)
     brickgen_version = Column(String, nullable=True)  # version when job was created/run

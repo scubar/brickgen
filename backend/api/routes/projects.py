@@ -34,6 +34,7 @@ class JobCreateBody(BaseModel):
     """Body for creating a job under a project. At least one of generate_3mf or generate_stl must be True."""
     plate_width: int = Field(default=220, ge=100, le=2000)
     plate_depth: int = Field(default=220, ge=100, le=2000)
+    plate_height: int = Field(default=250, ge=100, le=2000)  # stored for reference; placement algo uses only width/depth
     bypass_cache: bool = False
     generate_3mf: bool = True
     generate_stl: bool = True
@@ -198,6 +199,7 @@ async def create_project_job(
     settings_obj = {
         "plate_width": body.plate_width,
         "plate_depth": body.plate_depth,
+        "plate_height": body.plate_height,
         "bypass_cache": body.bypass_cache,
         "generate_3mf": body.generate_3mf,
         "generate_stl": body.generate_stl,
@@ -215,6 +217,7 @@ async def create_project_job(
         progress=0,
         plate_width=body.plate_width,
         plate_depth=body.plate_depth,
+        plate_height=body.plate_height,
         brickgen_version=__version__,
         settings=settings_json
     )

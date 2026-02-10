@@ -56,7 +56,7 @@ async def get_part_preview(
         stl_path = stl_converter.get_or_convert_stl(
             ldraw_id,
             bypass_cache=False,
-            scale_factor=getattr(settings, "stl_scale_factor", 10.0),
+            scale_factor=getattr(settings, "stl_scale_factor_backend", 10.0),
             rotation_enabled=use_rotation,
             rotation_x=rotation_x,
             rotation_y=rotation_y,

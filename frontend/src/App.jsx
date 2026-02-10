@@ -19,6 +19,7 @@ function App() {
             <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/cache" element={<SettingsPage />} />
+            <Route path="/settings/database" element={<SettingsPage />} />
             <Route path="/attributions" element={<AttributionsPage />} />
           </Routes>
         </main>

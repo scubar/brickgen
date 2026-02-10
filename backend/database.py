@@ -78,6 +78,25 @@ class SearchHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class AppSettings(Base):
+    """Single-row table for persisted app settings (non-sensitive; env-only: API key, paths)."""
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    default_plate_width = Column(Integer, default=220)
+    default_plate_depth = Column(Integer, default=220)
+    default_plate_height = Column(Integer, default=250)
+    part_spacing = Column(Integer, default=2)
+    stl_scale_factor = Column(Float, default=1.0)
+    rotation_enabled = Column(Boolean, default=False)
+    rotation_x = Column(Float, default=0.0)
+    rotation_y = Column(Float, default=0.0)
+    rotation_z = Column(Float, default=0.0)
+    default_orientation_match_preview = Column(Boolean, default=True)
+    auto_generate_part_previews = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class STLCache(Base):
     """Cache for converted STL files. Key: (part_num, scale, rotation_enabled, rotation_x, rotation_y, rotation_z)."""
     __tablename__ = "stl_cache"
@@ -110,70 +129,17 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db():
-    """Initialize database tables and run migrations."""
-    Base.metadata.create_all(bind=engine)
-    # Add new columns to jobs if missing (migration)
-    from sqlalchemy import inspect, text
-    inspector = inspect(engine)
-    if "jobs" in inspector.get_table_names():
-        cols = {c["name"] for c in inspector.get_columns("jobs")}
-        with engine.connect() as conn:
-            if "brickgen_version" not in cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN brickgen_version VARCHAR"))
-                conn.commit()
-            if "settings" not in cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN settings TEXT"))
-                conn.commit()
-            if "project_id" not in cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN project_id VARCHAR"))
-                conn.commit()
-            if "log" not in cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN log TEXT"))
-                conn.commit()
+    """Run database migrations (Alembic). Tables are created/updated by migrations."""
+    from pathlib import Path
+    from alembic import command
+    from alembic.config import Config
 
-    # stl_cache: add rotation/scale columns if missing; then recreate table for composite unique
-    if "stl_cache" in inspector.get_table_names():
-        cols = {c["name"] for c in inspector.get_columns("stl_cache")}
-        new_cols = ("rotation_enabled", "rotation_x", "rotation_y", "rotation_z", "scale")
-        added_any = False
-        with engine.connect() as conn:
-            for col in new_cols:
-                if col not in cols:
-                    if col == "rotation_enabled":
-                        conn.execute(text("ALTER TABLE stl_cache ADD COLUMN rotation_enabled BOOLEAN DEFAULT 0"))
-                    elif col in ("rotation_x", "rotation_y", "rotation_z", "scale"):
-                        default = 10.0 if col == "scale" else 0.0
-                        conn.execute(text(f"ALTER TABLE stl_cache ADD COLUMN {col} FLOAT DEFAULT {default}"))
-                    else:
-                        conn.execute(text(f"ALTER TABLE stl_cache ADD COLUMN {col} FLOAT DEFAULT 0"))
-                    conn.commit()
-                    added_any = True
-            if added_any:
-                # Recreate table so we can have composite unique (SQLite cannot add constraint via ALTER)
-                conn.execute(text("""
-                    CREATE TABLE stl_cache_new (
-                        id INTEGER NOT NULL PRIMARY KEY,
-                        part_num VARCHAR,
-                        file_path VARCHAR,
-                        file_size INTEGER,
-                        rotation_enabled BOOLEAN DEFAULT 0,
-                        rotation_x FLOAT DEFAULT 0,
-                        rotation_y FLOAT DEFAULT 0,
-                        rotation_z FLOAT DEFAULT 0,
-                        scale FLOAT DEFAULT 10,
-                        created_at DATETIME,
-                        UNIQUE(part_num, scale, rotation_enabled, rotation_x, rotation_y, rotation_z)
-                    )
-                """))
-                conn.execute(text("""
-                    INSERT INTO stl_cache_new (id, part_num, file_path, file_size, rotation_enabled, rotation_x, rotation_y, rotation_z, scale, created_at)
-                    SELECT id, part_num, file_path, file_size,
-                           COALESCE(rotation_enabled, 0), COALESCE(rotation_x, 0), COALESCE(rotation_y, 0), COALESCE(rotation_z, 0), COALESCE(scale, 10), created_at
-                    FROM stl_cache
-                """))
-                conn.execute(text("DROP TABLE stl_cache"))
-                conn.execute(text("ALTER TABLE stl_cache_new RENAME TO stl_cache"))
-                conn.commit()
+    # Run from project root so script_location resolves
+    project_root = Path(__file__).resolve().parent.parent
+    alembic_cfg = Config(str(project_root / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(project_root / "alembic"))
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.database_path}")
+    command.upgrade(alembic_cfg, "head")
 
 
 def get_db():

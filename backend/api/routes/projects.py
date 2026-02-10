@@ -38,7 +38,7 @@ class JobCreateBody(BaseModel):
     generate_3mf: bool = True
     generate_stl: bool = True
     per_part_rotation: Optional[dict] = None  # ldraw_id -> {x, y, z} in degrees
-    scale_factor: Optional[float] = Field(None, ge=0.01, le=100.0)
+    scale_factor: Optional[float] = Field(None, ge=0.01, le=10.0)  # user scale (1.0 = normal)
 
     @model_validator(mode="after")
     def at_least_one_output(self):
@@ -204,7 +204,7 @@ async def create_project_job(
         "per_part_rotation": body.per_part_rotation or {},
     }
     if body.scale_factor is not None:
-        settings_obj["scale_factor"] = body.scale_factor
+        settings_obj["scale_factor"] = float(body.scale_factor)
     settings_json = json.dumps(settings_obj)
 
     job = Job(

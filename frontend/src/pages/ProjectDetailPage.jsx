@@ -46,6 +46,12 @@ function ProjectDetailPage() {
   const colorRefTotalPages = Math.max(1, Math.ceil(partColorRefList.length / COLOR_REF_PAGE_SIZE))
   const colorRefToShow = partColorRefList.slice((colorRefPage - 1) * COLOR_REF_PAGE_SIZE, colorRefPage * COLOR_REF_PAGE_SIZE)
 
+  const formatScale = (v) => {
+    const n = parseFloat(v)
+    if (Number.isNaN(n)) return '1.0'
+    return n === Math.round(n) ? Number(n).toFixed(1) : String(n)
+  }
+
   useEffect(() => {
     fetchProject()
     fetchVersion()
@@ -184,7 +190,7 @@ function ProjectDetailPage() {
           generate_stl: formatStl,
           bypass_cache: bypassCache,
           per_part_rotation: Object.keys(perPartRotation).length ? perPartRotation : undefined,
-          scale_factor: (scaleFactor != null && scaleFactor > 0) ? scaleFactor : (wizardGlobalSettings?.stl_scale_factor ?? 10)
+          scale_factor: (scaleFactor != null && scaleFactor > 0) ? Number(scaleFactor) : (parseFloat(wizardGlobalSettings?.stl_scale_factor) || 1.0)
         })
       })
       if (!r.ok) throw new Error('Failed to create job')
@@ -432,7 +438,7 @@ function ProjectDetailPage() {
                   {wizardGlobalSettings && (
                     <div className="bg-dk-1 border border-dk-3 rounded p-3 text-sm text-dk-5">
                       <p className="font-medium mb-1">Current global settings (read-only)</p>
-                      <p>Scale: {wizardGlobalSettings.stl_scale_factor ?? 10} (STL in mm; calibrated for parts 3034 / 3404)</p>
+                      <p>Scale: {formatScale(wizardGlobalSettings.stl_scale_factor)} (1.0 = normal, 10 mm per LDraw unit)</p>
                       <p>Rotation: {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
                       <button type="button" onClick={() => { setWizardOpen(false); navigate('/settings'); }} className="text-mint hover:underline mt-1">Change in Settings</button>
                     </div>
@@ -467,13 +473,13 @@ function ProjectDetailPage() {
                       type="number"
                       step="0.1"
                       min="0.01"
-                      max="100"
-                      placeholder={wizardGlobalSettings ? `Default: ${wizardGlobalSettings.stl_scale_factor ?? 10}` : 'Default: 10'}
+                      max="10"
+                      placeholder={wizardGlobalSettings ? `Default: ${formatScale(wizardGlobalSettings.stl_scale_factor)}` : 'Default: 1.0'}
                       value={scaleFactor ?? ''}
                       onChange={(e) => setScaleFactor(e.target.value === '' ? null : Number(e.target.value))}
                       className="w-full px-3 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5"
                     />
-                    <p className="text-xs text-dk-5/70 mt-1">Leave empty to use global default. Affects part size in mm (e.g. 10 = LDView cm to mm).</p>
+                    <p className="text-xs text-dk-5/70 mt-1">Leave empty to use global default. 1.0 = normal (10 mm per LDraw unit).</p>
                   </div>
                   {wizardGlobalSettings && (
                     <div className="bg-dk-1 border border-dk-3 rounded p-3 text-sm text-dk-5">
@@ -558,7 +564,7 @@ function ProjectDetailPage() {
                     <p><strong>Per-part rotation:</strong> {Object.keys(perPartRotation).length} part(s) customized</p>
                   )}
                   {wizardGlobalSettings && (
-                    <p><strong>Scale:</strong> {scaleFactor != null ? scaleFactor : `Default ${wizardGlobalSettings.stl_scale_factor ?? 10}`} · <strong>Rotation:</strong> {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
+                    <p><strong>Scale:</strong> {scaleFactor != null ? formatScale(scaleFactor) : `Default ${formatScale(wizardGlobalSettings?.stl_scale_factor)}`} · <strong>Rotation:</strong> {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
                   )}
                 </div>
               )}

@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response models."""
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 
 
 class SetSearchResult(BaseModel):
@@ -38,7 +38,7 @@ class GenerateRequest(BaseModel):
     generate_3mf: bool = Field(default=True)
     generate_stl: bool = Field(default=True)
     project_id: Optional[str] = None
-    scale_factor: Optional[float] = Field(None, ge=0.01, le=100.0)
+    scale_factor: Optional[float] = Field(None, ge=0.01, le=10.0)  # user scale (1.0 = normal); backend multiplies by 10
 
     @model_validator(mode="after")
     def at_least_one_output(self):
@@ -75,6 +75,18 @@ class SettingsResponse(BaseModel):
     default_orientation_match_preview: bool = True
     auto_generate_part_previews: bool = True
 
+    @field_validator("stl_scale_factor", mode="before")
+    @classmethod
+    def coerce_scale_float(cls, v):
+        """Ensure scale is always float (e.g. 1.0 not 1)."""
+        return float(v) if v is not None else 1.0
+
+    @field_validator("rotation_x", "rotation_y", "rotation_z", mode="before")
+    @classmethod
+    def coerce_rotation_float(cls, v):
+        """Ensure rotation values are always float."""
+        return float(v) if v is not None else 0.0
+
 
 class SettingsUpdate(BaseModel):
     """Update application settings."""
@@ -82,7 +94,7 @@ class SettingsUpdate(BaseModel):
     default_plate_depth: Optional[int] = Field(None, ge=100, le=2000)
     default_plate_height: Optional[int] = Field(None, ge=100, le=2000)
     part_spacing: Optional[int] = Field(None, ge=1, le=10)
-    stl_scale_factor: Optional[float] = Field(None, ge=0.01, le=100.0)
+    stl_scale_factor: Optional[float] = Field(None, ge=0.01, le=10.0)  # user scale (1.0 = normal)
     rotation_enabled: Optional[bool] = None
     rotation_x: Optional[float] = None
     rotation_y: Optional[float] = None
@@ -105,3 +117,18 @@ class LDrawCacheStats(BaseModel):
     total_size_mb: float
     library_path: str
     version: Optional[str] = None
+
+
+class MigrationInfo(BaseModel):
+    """Single migration revision info."""
+    revision_id: str
+    description: str
+    applied: bool
+
+
+class DatabaseInfo(BaseModel):
+    """Database path, migrations, and table row counts."""
+    database_path: str
+    current_revision: Optional[str] = None
+    migrations: List[MigrationInfo]
+    table_counts: dict  # table name -> row count

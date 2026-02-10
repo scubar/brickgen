@@ -18,9 +18,10 @@ from backend.models.schemas import (
 from backend.config import settings
 from backend.core.stl_processing import STLConverter
 from backend.api.integrations.ldraw import LDrawManager
-from backend.database import get_db, CachedSet, CachedParts, engine
+from backend.database import get_db, ApiCache, engine
 from backend.database import Project, Job, SearchHistory
 from backend.database import STLCache, AppSettings
+from backend.core.api_cache import DbApiCache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -345,26 +346,36 @@ async def list_cached_sets(
     page_size: int = Query(20, ge=1, le=100, description="Items per page")
 ):
     """List cached sets (Rebrickable cache) with set_num, name, cached_at. Paginated."""
-    q = db.query(CachedSet).order_by(CachedSet.updated_at.desc())
+    import json as _json
+    prefix = "rebrickable:set:"
+    q = db.query(ApiCache).filter(ApiCache.key.like(f"{prefix}%")).order_by(ApiCache.updated_at.desc())
     count = q.count()
     offset = (page - 1) * page_size
     rows = q.offset(offset).limit(page_size).all()
     total_pages = (count + page_size - 1) // page_size if page_size else 0
+    results = []
+    for r in rows:
+        set_num = r.key[len(prefix):] if r.key.startswith(prefix) else r.key
+        try:
+            data = _json.loads(r.value) if isinstance(r.value, str) else r.value
+            name = (data.get("name") or "")
+            image_url = data.get("image_url")
+        except (TypeError, ValueError):
+            name = ""
+            image_url = None
+        results.append(CachedSetSummary(
+            set_num=set_num,
+            name=name,
+            cached_at=r.updated_at.isoformat() if r.updated_at else "",
+            image_url=image_url,
+        ))
     return RebrickableCacheList(
-        results=[
-            CachedSetSummary(
-                set_num=r.set_num,
-                name=r.name or "",
-                cached_at=r.updated_at.isoformat() if r.updated_at else "",
-                image_url=r.image_url
-            )
-            for r in rows
-        ],
+        results=results,
         count=count,
         page=page,
         page_size=page_size,
         next=page + 1 if page < total_pages else None,
-        previous=page - 1 if page > 1 else None
+        previous=page - 1 if page > 1 else None,
     )
 
 
@@ -374,16 +385,26 @@ async def clear_rebrickable_cache(
     db: Session = Depends(get_db)
 ):
     """Clear Rebrickable cache: all cached sets (and their parts) or a single set."""
+    from backend.api.integrations.rebrickable import CACHE_KEY_SET, CACHE_KEY_SET_INDEX, CACHE_KEY_SET_PARTS
+
     if set_num:
-        deleted_sets = db.query(CachedSet).filter(CachedSet.set_num == set_num).delete()
-        deleted_parts = db.query(CachedParts).filter(CachedParts.set_num == set_num).delete()
-        db.commit()
-        return {"message": f"Cleared cache for set {set_num}", "sets": deleted_sets, "parts": deleted_parts}
+        norm = set_num if "-" in set_num else f"{set_num}-1"
+        keys_to_delete = [
+            f"{CACHE_KEY_SET}{set_num}",
+            f"{CACHE_KEY_SET}{norm}",
+            f"{CACHE_KEY_SET_PARTS}{set_num}",
+            f"{CACHE_KEY_SET_PARTS}{norm}",
+        ]
+        deleted_api = DbApiCache.delete_keys(db, keys_to_delete)
+        # Remove set from set index (used by suggest)
+        cache = DbApiCache(db)
+        index = cache.get(CACHE_KEY_SET_INDEX) or []
+        index = [x for x in index if x.get("set_num") not in (set_num, norm)]
+        cache.set(CACHE_KEY_SET_INDEX, index)
+        return {"message": f"Cleared cache for set {set_num}", "api_cache": deleted_api}
     else:
-        deleted_sets = db.query(CachedSet).delete()
-        deleted_parts = db.query(CachedParts).delete()
-        db.commit()
-        return {"message": "Cleared all Rebrickable cache", "sets": deleted_sets, "parts": deleted_parts}
+        deleted_api = DbApiCache.delete_by_prefix(db, "rebrickable:")
+        return {"message": "Cleared all Rebrickable cache", "api_cache": deleted_api}
 
 
 @router.get("/cache/stats", response_model=CacheStats)
@@ -548,8 +569,7 @@ async def get_database_info(db: Session = Depends(get_db)):
     table_counts = {}
     tables = [
         ("projects", Project),
-        ("cached_sets", CachedSet),
-        ("cached_parts", CachedParts),
+        ("api_cache", ApiCache),
         ("jobs", Job),
         ("search_history", SearchHistory),
         ("app_settings", AppSettings),

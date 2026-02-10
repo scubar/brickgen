@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import CacheSection from './CacheSection'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
-const PREVIEW_ITEMS_PER_PAGE = 24
+const PREVIEW_ITEMS_PER_PAGE = 5
 const SEARCH_HISTORY_PER_PAGE = 20
 
 /** Shared cache management sections (STL, Rebrickable, preview, LDraw, search history). Used in Settings Cache tab and on standalone cache page. */

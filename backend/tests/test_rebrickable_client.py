@@ -106,3 +106,17 @@ class TestRebrickableGetSetParts:
             client = RebrickableClient(api_key="test-key")
             out = await client.get_set_parts("1234-1")
         assert out[0]["ldraw_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_set_parts_uses_cache_when_provided(self):
+        """When cache returns a value, no API call is made."""
+        cached_parts = [{"part_num": "3005", "quantity": 3, "color": "Red"}]
+        mock_cache = type("Cache", (), {
+            "get": lambda self, k: cached_parts if "set_parts" in k else None,
+            "set": lambda self, k, v, ttl=None: None,
+        })()
+        with patch.object(RebrickableClient, "_make_request", new_callable=AsyncMock) as mock_req:
+            client = RebrickableClient(api_key="test-key", cache=mock_cache)
+            out = await client.get_set_parts("75192-1")
+        assert out == cached_parts
+        mock_req.assert_not_called()

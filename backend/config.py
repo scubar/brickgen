@@ -1,15 +1,33 @@
 """Configuration management for BrickGen application."""
-import os
 from pathlib import Path
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings
+
+VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+# Resolve .env path relative to project root (parent of backend/) so the API key
+# is loaded consistently regardless of current working directory (e.g. running
+# from project root vs backend/ or via Docker WORKDIR).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # API Keys
-    rebrickable_api_key: str = ""
+    # API Keys (loaded from REBRICKABLE_API_KEY in .env or environment)
+    rebrickable_api_key: str = Field(default="", validation_alias="REBRICKABLE_API_KEY")
+    
+    # Logging (LOG_LEVEL: DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    log_level: str = "INFO"
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def normalize_log_level(cls, v: str) -> str:
+        if not v or not isinstance(v, str):
+            return "INFO"
+        level = v.strip().upper()
+        return level if level in VALID_LOG_LEVELS else "INFO"
     
     # Build Plate Defaults
     default_plate_width: int = 220
@@ -90,7 +108,11 @@ class Settings(BaseSettings):
     # Job Settings
     max_job_age_hours: int = 24
 
-    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = ConfigDict(
+        env_file=str(_ENV_FILE) if _ENV_FILE.exists() else None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()

@@ -11,7 +11,7 @@ from backend.api.integrations.rebrickable import RebrickableClient
 from backend.api.integrations.ldraw import LDrawManager
 from backend.core.stl_processing import STLConverter
 from backend.core.threemf_generator import ThreeMFGenerator
-from backend.database import get_db, Job, CachedParts, Project
+from backend.database import get_db, Job, Project
 from backend.api.routes.settings import sync_config_from_db
 from backend.config import settings
 from backend.version import __version__
@@ -71,9 +71,11 @@ async def process_generation(
         job.progress = 10
         db.commit()
         
-        # Step 2: Get parts list from Rebrickable
+        # Step 2: Get parts list from Rebrickable (use cache to avoid repeat API calls)
         logger.info(f"Job {job_id}: Fetching parts list for set {set_num}")
-        rebrickable = RebrickableClient()
+        from backend.core.api_cache import DbApiCache
+        cache = DbApiCache(db)
+        rebrickable = RebrickableClient(cache=cache)
         parts = await rebrickable.get_set_parts(set_num)
         
         if not parts:

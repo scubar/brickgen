@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
-from backend.database import get_db, Project, Job, CachedSet
+from backend.database import get_db, Project, Job
 from backend.config import settings
 from backend.version import __version__
 from backend.api.routes.generate import process_generation
@@ -82,16 +82,18 @@ async def list_projects(db: Session = Depends(get_db)):
 async def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
     """Create a project for a set. Optionally warn if another project references the same set."""
     # Resolve set display info from cache
+    from backend.core.api_cache import DbApiCache
+    from backend.api.integrations.rebrickable import CACHE_KEY_SET
+
     set_num = data.set_num
     if "-" not in set_num:
         set_num_with_ver = f"{set_num}-1"
     else:
         set_num_with_ver = set_num
-    cached = db.query(CachedSet).filter(CachedSet.set_num == set_num_with_ver).first()
-    if not cached:
-        cached = db.query(CachedSet).filter(CachedSet.set_num == set_num).first()
-    set_name = cached.name if cached else set_num
-    image_url = cached.image_url if cached else None
+    cache = DbApiCache(db)
+    cached = cache.get(f"{CACHE_KEY_SET}{set_num_with_ver}") or cache.get(f"{CACHE_KEY_SET}{set_num}")
+    set_name = cached.get("name", set_num) if cached else set_num
+    image_url = cached.get("image_url") if cached else None
 
     existing_for_set = db.query(Project).filter(Project.set_num == set_num_with_ver).first() is not None
     if not existing_for_set and set_num != set_num_with_ver:

@@ -24,6 +24,39 @@ function SettingsPage() {
     rotation_z: 0,
     default_orientation_match_preview: true,
     auto_generate_part_previews: true,
+    ldview_allow_primitive_substitution: true,
+    ldview_use_quality_studs: true,
+    ldview_curve_quality: 2,
+    ldview_seams: false,
+    ldview_seam_width: 0,
+    ldview_bfc: true,
+    ldview_bounding_boxes_only: false,
+    ldview_show_highlight_lines: false,
+    ldview_polygon_offset: true,
+    ldview_edge_thickness: 0,
+    ldview_line_smoothing: false,
+    ldview_black_highlights: false,
+    ldview_conditional_highlights: false,
+    ldview_wireframe: false,
+    ldview_wireframe_thickness: 0,
+    ldview_remove_hidden_lines: false,
+    ldview_texture_studs: true,
+    ldview_texmaps: true,
+    ldview_hi_res_primitives: false,
+    ldview_texture_filter_type: 9987,
+    ldview_aniso_level: 0,
+    ldview_texture_offset_factor: 5,
+    ldview_lighting: true,
+    ldview_use_quality_lighting: false,
+    ldview_use_specular: true,
+    ldview_subdued_lighting: false,
+    ldview_perform_smoothing: true,
+    ldview_use_flat_shading: false,
+    ldview_antialias: 0,
+    ldview_process_ldconfig: true,
+    ldview_sort_transparent: true,
+    ldview_use_stipple: false,
+    ldview_memory_usage: 2,
   })
   const [apiKey, setApiKey] = useState('')
   const [envPaths, setEnvPaths] = useState({
@@ -38,6 +71,7 @@ function SettingsPage() {
   const [databaseInfo, setDatabaseInfo] = useState(null)
   const [databaseInfoLoading, setDatabaseInfoLoading] = useState(false)
   const [scaleInputStr, setScaleInputStr] = useState('1')
+  const [ldviewAdvancedOpen, setLdviewAdvancedOpen] = useState(false)
   useEffect(() => {
     fetchSettings()
   }, [])
@@ -119,7 +153,7 @@ function SettingsPage() {
         setScaleInputStr(Number.isNaN(savedScale) ? String(scaleParsed) : String(savedScale))
         setSettings(prev => ({ ...prev, ...saved, stl_scale_factor: Number.isNaN(savedScale) ? scaleParsed : savedScale }))
         if (data.cache_cleared) {
-          setMessage({ type: 'success', text: 'Settings saved! STL cache was cleared due to rotation change.' })
+          setMessage({ type: 'success', text: 'Settings saved! STL cache was cleared.' })
         } else {
           setMessage({ type: 'success', text: 'Settings saved successfully!' })
         }
@@ -175,6 +209,20 @@ function SettingsPage() {
     if (['rotation_x', 'rotation_y', 'rotation_z'].includes(field)) {
       const val = clampRotation(value)
       setSettings(prev => ({ ...prev, [field]: val }))
+    } else if (field.startsWith('ldview_')) {
+      if (['ldview_allow_primitive_substitution', 'ldview_use_quality_studs', 'ldview_seams', 'ldview_bfc', 'ldview_bounding_boxes_only',
+           'ldview_show_highlight_lines', 'ldview_polygon_offset', 'ldview_line_smoothing', 'ldview_black_highlights', 'ldview_conditional_highlights',
+           'ldview_wireframe', 'ldview_remove_hidden_lines', 'ldview_texture_studs', 'ldview_texmaps', 'ldview_hi_res_primitives',
+           'ldview_lighting', 'ldview_use_quality_lighting', 'ldview_use_specular', 'ldview_subdued_lighting', 'ldview_perform_smoothing',
+           'ldview_use_flat_shading', 'ldview_process_ldconfig', 'ldview_sort_transparent', 'ldview_use_stipple'].includes(field)) {
+        setSettings(prev => ({ ...prev, [field]: !!value }))
+      } else if (['ldview_edge_thickness', 'ldview_wireframe_thickness', 'ldview_texture_offset_factor'].includes(field)) {
+        const n = parseFloat(value)
+        setSettings(prev => ({ ...prev, [field]: Number.isNaN(n) ? 0 : n }))
+      } else {
+        const n = parseInt(value, 10)
+        setSettings(prev => ({ ...prev, [field]: Number.isNaN(n) ? 0 : n }))
+      }
     } else if (field === 'rotation_enabled' || field === 'auto_generate_part_previews' || field === 'default_orientation_match_preview') {
       setSettings(prev => ({ ...prev, [field]: value }))
     } else {
@@ -188,10 +236,93 @@ function SettingsPage() {
 
   const tabs = [
     { id: 'general', label: 'General' },
-    { id: 'parts', label: 'Part Placement and Scaling' },
-    { id: 'cache', label: 'Cache Management' },
+    { id: 'parts', label: 'Part Placement/Scaling' },
+    { id: 'ldview', label: 'LDView Config' },
+    { id: 'cache', label: 'Cache' },
     { id: 'database', label: 'Database' },
   ]
+
+  const LDVIEW_DEFAULTS = {
+    ldview_allow_primitive_substitution: true,
+    ldview_use_quality_studs: true,
+    ldview_curve_quality: 2,
+    ldview_seams: false,
+    ldview_seam_width: 0,
+    ldview_bfc: true,
+    ldview_bounding_boxes_only: false,
+    ldview_show_highlight_lines: false,
+    ldview_polygon_offset: true,
+    ldview_edge_thickness: 0,
+    ldview_line_smoothing: false,
+    ldview_black_highlights: false,
+    ldview_conditional_highlights: false,
+    ldview_wireframe: false,
+    ldview_wireframe_thickness: 0,
+    ldview_remove_hidden_lines: false,
+    ldview_texture_studs: true,
+    ldview_texmaps: true,
+    ldview_hi_res_primitives: false,
+    ldview_texture_filter_type: 9987,
+    ldview_aniso_level: 0,
+    ldview_texture_offset_factor: 5,
+    ldview_lighting: true,
+    ldview_use_quality_lighting: false,
+    ldview_use_specular: true,
+    ldview_subdued_lighting: false,
+    ldview_perform_smoothing: true,
+    ldview_use_flat_shading: false,
+    ldview_antialias: 0,
+    ldview_process_ldconfig: true,
+    ldview_sort_transparent: true,
+    ldview_use_stipple: false,
+    ldview_memory_usage: 2,
+  }
+
+  const BASIC_LDVIEW_KEYS = ['ldview_use_quality_studs', 'ldview_antialias', 'ldview_curve_quality', 'ldview_memory_usage']
+
+  const ldviewSettings = [
+    { key: 'ldview_allow_primitive_substitution', label: 'Allow primitive substitution', impact: 'STL + Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_use_quality_studs', label: 'Quality studs', impact: 'STL + Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_curve_quality', label: 'Curve quality (1–12)', impact: 'STL + Preview', type: 'number', min: 1, max: 12, perf: true, perfNote: 'High values may be slow' },
+    { key: 'ldview_seams', label: 'Seams', impact: 'STL', type: 'checkbox', perf: false },
+    { key: 'ldview_seam_width', label: 'Seam width (0–500)', impact: 'STL', type: 'number', min: 0, max: 500, perf: false },
+    { key: 'ldview_bfc', label: 'BFC (back-face culling)', impact: 'STL + Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_bounding_boxes_only', label: 'Bounding boxes only', impact: 'STL + Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_show_highlight_lines', label: 'Show highlight lines (edges)', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_polygon_offset', label: 'Polygon offset (edge depth)', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_edge_thickness', label: 'Edge thickness (0–5)', impact: 'Preview', type: 'number', min: 0, max: 5, step: 0.5, perf: false },
+    { key: 'ldview_line_smoothing', label: 'Line smoothing (antialiased lines)', impact: 'Preview', type: 'checkbox', perf: true },
+    { key: 'ldview_black_highlights', label: 'Black highlights', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_conditional_highlights', label: 'Conditional highlights', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_wireframe', label: 'Wireframe', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_wireframe_thickness', label: 'Wireframe thickness (0–5)', impact: 'Preview', type: 'number', min: 0, max: 5, step: 0.5, perf: false },
+    { key: 'ldview_remove_hidden_lines', label: 'Remove hidden lines', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_texture_studs', label: 'Texture studs', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_texmaps', label: 'Texture mapping', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_hi_res_primitives', label: 'Hi-res primitives', impact: 'STL + Preview', type: 'checkbox', perf: true },
+    { key: 'ldview_texture_filter_type', label: 'Texture filter', impact: 'Preview', type: 'select', options: [{ v: 9984, l: 'Nearest' }, { v: 9985, l: 'Bilinear' }, { v: 9987, l: 'Trilinear' }], perf: false },
+    { key: 'ldview_aniso_level', label: 'Aniso level', impact: 'Preview', type: 'number', min: 0, perf: false },
+    { key: 'ldview_texture_offset_factor', label: 'Texture offset (1–10)', impact: 'Preview', type: 'number', min: 1, max: 10, step: 0.5, perf: false },
+    { key: 'ldview_lighting', label: 'Lighting', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_use_quality_lighting', label: 'Quality lighting', impact: 'Preview', type: 'checkbox', perf: true },
+    { key: 'ldview_use_specular', label: 'Specular highlight', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_subdued_lighting', label: 'Subdued lighting', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_perform_smoothing', label: 'Perform smoothing', impact: 'STL + Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_use_flat_shading', label: 'Flat shading', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_antialias', label: 'Antialias (FSAA)', impact: 'STL + Preview', type: 'number', min: 0, perf: true },
+    { key: 'ldview_process_ldconfig', label: 'Process ldconfig.ldr', impact: 'STL + Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_sort_transparent', label: 'Sort transparent', impact: 'Preview', type: 'checkbox', perf: true },
+    { key: 'ldview_use_stipple', label: 'Use stipple (transparency)', impact: 'Preview', type: 'checkbox', perf: false },
+    { key: 'ldview_memory_usage', label: 'Memory usage (0 Low, 1 Medium, 2 High)', impact: 'STL + Preview', type: 'number', min: 0, max: 2, perf: true, perfNote: 'Low may be slower for large models' },
+  ]
+
+  const ldviewBasicSettings = ldviewSettings.filter((s) => BASIC_LDVIEW_KEYS.includes(s.key))
+  const ldviewAdvancedSettings = ldviewSettings.filter((s) => !BASIC_LDVIEW_KEYS.includes(s.key))
+
+  const handleRestoreLdviewDefaults = () => {
+    setSettings((prev) => ({ ...prev, ...LDVIEW_DEFAULTS }))
+    setMessage({ type: 'success', text: 'LDView settings reset to defaults. Click Save to apply.' })
+  }
 
   const selectTab = (id) => {
     setActiveTab(id)
@@ -362,6 +493,147 @@ function SettingsPage() {
                 <button type="submit" disabled={saving} className="w-full px-6 py-3 bg-mint text-dk-1 rounded-lg hover:opacity-90 disabled:opacity-50 font-semibold">
                   {saving ? 'Saving...' : 'Save settings'}
                 </button>
+              </form>
+            </div>
+          )}
+
+          {/* LDView Quality Tab */}
+          {activeTab === 'ldview' && (
+            <div className="space-y-6">
+              <p className="text-sm text-dk-5/80">
+                These options control LDView when converting parts to STL and when generating part preview images. Changing any option clears the STL cache. <strong>Impact</strong> indicates which action uses the setting.
+              </p>
+              <form onSubmit={handleSaveSettings} className="space-y-6">
+                <div className="space-y-4">
+                  {ldviewBasicSettings.map(({ key, label, impact, type, perf, perfNote, min, max, step, options }) => (
+                    <div key={key} className="flex flex-wrap items-center gap-2 p-3 bg-dk-1 rounded border border-dk-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label className="text-sm font-medium text-dk-5">{label}</label>
+                          <span className="text-xs px-2 py-0.5 rounded bg-dk-3 text-dk-5" title={`Affects: ${impact}`}>
+                            {impact}
+                          </span>
+                          {perf && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400" title={perfNote || 'May be performance-intensive'}>
+                              Perf
+                            </span>
+                          )}
+                        </div>
+                        {perf && perfNote && (
+                          <p className="text-xs text-dk-5/70 mt-1">{perfNote}</p>
+                        )}
+                      </div>
+                      <div className="flex-shrink-0">
+                        {type === 'checkbox' ? (
+                          <input
+                            type="checkbox"
+                            checked={!!settings[key]}
+                            onChange={(e) => handleChange(key, e.target.checked)}
+                            className="w-5 h-5 rounded border-dk-3 text-mint focus:ring-mint"
+                          />
+                        ) : type === 'select' && options ? (
+                          <select
+                            value={settings[key]}
+                            onChange={(e) => handleChange(key, parseInt(e.target.value, 10))}
+                            className="px-2 py-1.5 border border-dk-3 rounded bg-dk-2 text-dk-5 text-sm"
+                          >
+                            {options.map(({ v, l }) => (
+                              <option key={v} value={v}>{l}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="number"
+                            value={settings[key]}
+                            onChange={(e) => handleChange(key, e.target.value)}
+                            min={min}
+                            max={max}
+                            step={step ?? 1}
+                            className="w-24 px-2 py-1.5 border border-dk-3 rounded bg-dk-2 text-dk-5 text-sm"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border border-dk-3 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setLdviewAdvancedOpen((o) => !o)}
+                    className="w-full px-4 py-3 flex items-center justify-between bg-dk-1 text-dk-5 hover:bg-dk-3/50 transition text-left font-medium"
+                  >
+                    <span>Advanced LDView settings</span>
+                    <span className="text-dk-5/70">{ldviewAdvancedOpen ? '▼' : '▶'}</span>
+                  </button>
+                  {ldviewAdvancedOpen && (
+                    <div className="p-4 pt-0 space-y-4 border-t border-dk-3">
+                      {ldviewAdvancedSettings.map(({ key, label, impact, type, perf, perfNote, min, max, step, options }) => (
+                        <div key={key} className="flex flex-wrap items-center gap-2 p-3 bg-dk-2 rounded border border-dk-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <label className="text-sm font-medium text-dk-5">{label}</label>
+                              <span className="text-xs px-2 py-0.5 rounded bg-dk-3 text-dk-5" title={`Affects: ${impact}`}>
+                                {impact}
+                              </span>
+                              {perf && (
+                                <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400" title={perfNote || 'May be performance-intensive'}>
+                                  Perf
+                                </span>
+                              )}
+                            </div>
+                            {perf && perfNote && (
+                              <p className="text-xs text-dk-5/70 mt-1">{perfNote}</p>
+                            )}
+                          </div>
+                          <div className="flex-shrink-0">
+                            {type === 'checkbox' ? (
+                              <input
+                                type="checkbox"
+                                checked={!!settings[key]}
+                                onChange={(e) => handleChange(key, e.target.checked)}
+                                className="w-5 h-5 rounded border-dk-3 text-mint focus:ring-mint"
+                              />
+                            ) : type === 'select' && options ? (
+                              <select
+                                value={settings[key]}
+                                onChange={(e) => handleChange(key, parseInt(e.target.value, 10))}
+                                className="px-2 py-1.5 border border-dk-3 rounded bg-dk-1 text-dk-5 text-sm"
+                              >
+                                {options.map(({ v, l }) => (
+                                  <option key={v} value={v}>{l}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="number"
+                                value={settings[key]}
+                                onChange={(e) => handleChange(key, e.target.value)}
+                                min={min}
+                                max={max}
+                                step={step ?? 1}
+                                className="w-24 px-2 py-1.5 border border-dk-3 rounded bg-dk-1 text-dk-5 text-sm"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={handleRestoreLdviewDefaults}
+                    className="px-6 py-3 bg-dk-3 text-dk-5 rounded-lg hover:bg-dk-3/80 font-medium"
+                  >
+                    Restore LDView defaults
+                  </button>
+                  <button type="submit" disabled={saving} className="flex-1 px-6 py-3 bg-mint text-dk-1 rounded-lg hover:opacity-90 disabled:opacity-50 font-semibold">
+                    {saving ? 'Saving...' : 'Save LDView settings'}
+                  </button>
+                </div>
               </form>
             </div>
           )}

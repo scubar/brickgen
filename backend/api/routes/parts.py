@@ -2,12 +2,15 @@
 import logging
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse
 from backend.config import settings
-from backend.core.ldview_converter import LDViewConverter
+from backend.core.ldview_converter import LDViewConverter, get_ldview_quality_key
 from backend.core.stl_processing import STLConverter
 from backend.core.stl_render import render_stl_to_png
+from sqlalchemy.orm import Session
+from backend.database import get_db
+from backend.api.routes.settings import sync_config_from_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -31,8 +34,10 @@ async def get_part_preview(
     rotation_y: float = Query(0.0, description="Rotation Y degrees"),
     rotation_z: float = Query(0.0, description="Rotation Z degrees"),
     color: Optional[str] = Query(None, description="Hex color for part (e.g. FF5500); used when rendering rotated preview"),
+    db: Session = Depends(get_db),
 ):
     """Return a PNG preview image for an LDraw part. With rotation params, preview shows the part with that rotation applied. Cached per size and rotation."""
+    sync_config_from_db(db)  # use persisted LDView settings for preview/STL
     if not ldraw_id or not ldraw_id.replace("-", "").replace("_", "").replace(".", "").isalnum():
         raise HTTPException(status_code=400, detail="Invalid part ID")
     ldraw_id = ldraw_id.strip().lower()
@@ -45,7 +50,8 @@ async def get_part_preview(
         if len(c) == 6 and all(x in "0123456789abcdefABCDEF" for x in c):
             hex_color = f"#{c}"
     color_suffix = f"_c{hex_color.lstrip('#')}" if hex_color else ""
-    preview_path = cache_dir / f"{ldraw_id}_{size}{rot_suffix}{color_suffix}.png"
+    quality_key = get_ldview_quality_key()
+    preview_path = cache_dir / f"{ldraw_id}_{size}{rot_suffix}{color_suffix}_q{quality_key}.png"
     if preview_path.exists():
         return FileResponse(str(preview_path), media_type="image/png")
 
@@ -75,16 +81,18 @@ async def get_part_preview(
 
 
 def _parse_preview_filename(stem: str) -> dict:
-    """Parse preview cache filename stem to ldraw_id, size, rotation. E.g. 3005_256 or 3005_512_r-90_0_0 or 3005_256_cff5500."""
+    """Parse preview cache filename stem to ldraw_id, size, rotation, quality_key. E.g. 3005_256_qabc12 or 3005_512_r-90_0_0_cff5500_qabc12."""
     import re
-    m = re.match(r"^(.+?)_(\d+)(_r(-?\d+)_(-?\d+)_(-?\d+))?(_c[0-9a-fA-F]+)?$", stem)
+    m = re.match(r"^(.+?)_(\d+)(_r(-?\d+)_(-?\d+)_(-?\d+))?(_c[0-9a-fA-F]+)?(_q[0-9a-f]+)?$", stem)
     if not m:
         return {}
     ldraw_id, size_str = m.group(1), m.group(2)
     rx = int(m.group(4)) if m.group(4) is not None else 0
     ry = int(m.group(5)) if m.group(5) is not None else 0
     rz = int(m.group(6)) if m.group(6) is not None else 0
-    return {"ldraw_id": ldraw_id, "size": int(size_str), "rotation_x": rx, "rotation_y": ry, "rotation_z": rz}
+    q_suffix = m.group(8)  # _q{hex} or None
+    quality_key = q_suffix[2:] if q_suffix else ""
+    return {"ldraw_id": ldraw_id, "size": int(size_str), "rotation_x": rx, "rotation_y": ry, "rotation_z": rz, "quality_key": quality_key}
 
 
 @router.get("/parts/preview-cache/list")
@@ -98,7 +106,7 @@ async def list_preview_cache():
     for f in sorted(cache_dir.glob("*.png")):
         parsed = _parse_preview_filename(f.stem)
         if parsed:
-            key = (parsed["ldraw_id"], parsed["size"], parsed["rotation_x"], parsed["rotation_y"], parsed["rotation_z"])
+            key = (parsed["ldraw_id"], parsed["size"], parsed["rotation_x"], parsed["rotation_y"], parsed["rotation_z"], parsed.get("quality_key", ""))
             if key not in seen:
                 seen.add(key)
                 items.append(parsed)

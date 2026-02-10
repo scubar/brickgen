@@ -12,6 +12,7 @@ from backend.api.integrations.ldraw import LDrawManager
 from backend.core.stl_processing import STLConverter
 from backend.core.threemf_generator import ThreeMFGenerator
 from backend.database import get_db, Job, CachedParts, Project
+from backend.api.routes.settings import sync_config_from_db
 from backend.config import settings
 from backend.version import __version__
 import json
@@ -111,6 +112,7 @@ async def process_generation(
         # Step 3: Convert parts to STL using LDView (user scale 1.0 → backend 10)
         scale_factor = float(scale_factor)
         scale_factor_backend = scale_factor * 10.0
+        sync_config_from_db(db)  # use persisted LDView settings for conversion
         logger.info(f"Job {job_id}: Converting parts to STL with LDView")
         converter = STLConverter()
         logger.info(f"Using scale factor {scale_factor} (backend {scale_factor_backend}), rotation_enabled={rot_enabled} (X={rx}, Y={ry}, Z={rz}), per_part_rotation keys={len(per_part_rotation)}")

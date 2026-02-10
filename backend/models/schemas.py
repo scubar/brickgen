@@ -67,6 +67,40 @@ class SettingsResponse(BaseModel):
     rotation_z: float
     default_orientation_match_preview: bool = True
     auto_generate_part_previews: bool = True
+    # LDView quality
+    ldview_allow_primitive_substitution: bool = True
+    ldview_use_quality_studs: bool = True
+    ldview_curve_quality: int = 2
+    ldview_seams: bool = False
+    ldview_seam_width: int = 0
+    ldview_bfc: bool = True
+    ldview_bounding_boxes_only: bool = False
+    ldview_show_highlight_lines: bool = False
+    ldview_polygon_offset: bool = True
+    ldview_edge_thickness: float = 0.0
+    ldview_line_smoothing: bool = False
+    ldview_black_highlights: bool = False
+    ldview_conditional_highlights: bool = False
+    ldview_wireframe: bool = False
+    ldview_wireframe_thickness: float = 0.0
+    ldview_remove_hidden_lines: bool = False
+    ldview_texture_studs: bool = True
+    ldview_texmaps: bool = True
+    ldview_hi_res_primitives: bool = False
+    ldview_texture_filter_type: int = 9987
+    ldview_aniso_level: int = 0
+    ldview_texture_offset_factor: float = 5.0
+    ldview_lighting: bool = True
+    ldview_use_quality_lighting: bool = False
+    ldview_use_specular: bool = True
+    ldview_subdued_lighting: bool = False
+    ldview_perform_smoothing: bool = True
+    ldview_use_flat_shading: bool = False
+    ldview_antialias: int = 0
+    ldview_process_ldconfig: bool = True
+    ldview_sort_transparent: bool = True
+    ldview_use_stipple: bool = False
+    ldview_memory_usage: int = 2
 
     @field_validator("stl_scale_factor", mode="before")
     @classmethod
@@ -94,6 +128,40 @@ class SettingsUpdate(BaseModel):
     rotation_z: Optional[float] = None
     default_orientation_match_preview: Optional[bool] = None
     auto_generate_part_previews: Optional[bool] = None
+    # LDView quality (optional; validated in route for ranges)
+    ldview_allow_primitive_substitution: Optional[bool] = None
+    ldview_use_quality_studs: Optional[bool] = None
+    ldview_curve_quality: Optional[int] = None
+    ldview_seams: Optional[bool] = None
+    ldview_seam_width: Optional[int] = None
+    ldview_bfc: Optional[bool] = None
+    ldview_bounding_boxes_only: Optional[bool] = None
+    ldview_show_highlight_lines: Optional[bool] = None
+    ldview_polygon_offset: Optional[bool] = None
+    ldview_edge_thickness: Optional[float] = None
+    ldview_line_smoothing: Optional[bool] = None
+    ldview_black_highlights: Optional[bool] = None
+    ldview_conditional_highlights: Optional[bool] = None
+    ldview_wireframe: Optional[bool] = None
+    ldview_wireframe_thickness: Optional[float] = None
+    ldview_remove_hidden_lines: Optional[bool] = None
+    ldview_texture_studs: Optional[bool] = None
+    ldview_texmaps: Optional[bool] = None
+    ldview_hi_res_primitives: Optional[bool] = None
+    ldview_texture_filter_type: Optional[int] = None
+    ldview_aniso_level: Optional[int] = None
+    ldview_texture_offset_factor: Optional[float] = None
+    ldview_lighting: Optional[bool] = None
+    ldview_use_quality_lighting: Optional[bool] = None
+    ldview_use_specular: Optional[bool] = None
+    ldview_subdued_lighting: Optional[bool] = None
+    ldview_perform_smoothing: Optional[bool] = None
+    ldview_use_flat_shading: Optional[bool] = None
+    ldview_antialias: Optional[int] = None
+    ldview_process_ldconfig: Optional[bool] = None
+    ldview_sort_transparent: Optional[bool] = None
+    ldview_use_stipple: Optional[bool] = None
+    ldview_memory_usage: Optional[int] = None
 
 
 class CacheStats(BaseModel):

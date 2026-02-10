@@ -278,7 +278,7 @@ function SettingsPage() {
     ldview_memory_usage: 2,
   }
 
-  const BASIC_LDVIEW_KEYS = ['ldview_use_quality_studs', 'ldview_antialias', 'ldview_curve_quality', 'ldview_memory_usage']
+  const BASIC_LDVIEW_KEYS = ['ldview_use_quality_studs', 'ldview_antialias', 'ldview_curve_quality', 'ldview_memory_usage', 'ldview_line_smoothing']
 
   const ldviewSettings = [
     { key: 'ldview_allow_primitive_substitution', label: 'Allow primitive substitution', impact: 'STL + Preview', type: 'checkbox', perf: false },
@@ -309,7 +309,7 @@ function SettingsPage() {
     { key: 'ldview_subdued_lighting', label: 'Subdued lighting', impact: 'Preview', type: 'checkbox', perf: false },
     { key: 'ldview_perform_smoothing', label: 'Perform smoothing', impact: 'STL + Preview', type: 'checkbox', perf: false },
     { key: 'ldview_use_flat_shading', label: 'Flat shading', impact: 'Preview', type: 'checkbox', perf: false },
-    { key: 'ldview_antialias', label: 'Antialias (FSAA)', impact: 'STL + Preview', type: 'number', min: 0, perf: true },
+    { key: 'ldview_antialias', label: 'Antialias (FSAA)', impact: 'Preview', type: 'number', min: 0, perf: true },
     { key: 'ldview_process_ldconfig', label: 'Process ldconfig.ldr', impact: 'STL + Preview', type: 'checkbox', perf: false },
     { key: 'ldview_sort_transparent', label: 'Sort transparent', impact: 'Preview', type: 'checkbox', perf: true },
     { key: 'ldview_use_stipple', label: 'Use stipple (transparency)', impact: 'Preview', type: 'checkbox', perf: false },

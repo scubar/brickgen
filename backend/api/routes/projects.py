@@ -38,6 +38,7 @@ class JobCreateBody(BaseModel):
     generate_3mf: bool = True
     generate_stl: bool = True
     per_part_rotation: Optional[dict] = None  # ldraw_id -> {x, y, z} in degrees
+    scale_factor: Optional[float] = Field(None, ge=0.01, le=100.0)
 
     @model_validator(mode="after")
     def at_least_one_output(self):
@@ -194,14 +195,17 @@ async def create_project_job(
         raise HTTPException(status_code=404, detail="Project not found")
 
     job_id = str(uuid.uuid4())
-    settings_json = json.dumps({
+    settings_obj = {
         "plate_width": body.plate_width,
         "plate_depth": body.plate_depth,
         "bypass_cache": body.bypass_cache,
         "generate_3mf": body.generate_3mf,
         "generate_stl": body.generate_stl,
-        "per_part_rotation": body.per_part_rotation or {}
-    })
+        "per_part_rotation": body.per_part_rotation or {},
+    }
+    if body.scale_factor is not None:
+        settings_obj["scale_factor"] = body.scale_factor
+    settings_json = json.dumps(settings_obj)
 
     job = Job(
         id=job_id,

@@ -88,20 +88,28 @@ async def process_generation(
         job.progress = 20
         db.commit()
         
-        # Per-part rotation from job settings (optional)
+        # Per-part rotation and per-job scale/rotation from job settings
         try:
             s = json.loads(job.settings) if job.settings else {}
             per_part_rotation = s.get("per_part_rotation") or {}
+            scale_factor = s.get("scale_factor")
+            if scale_factor is None:
+                scale_factor = settings.stl_scale_factor
+            rot_enabled = s.get("rotation_enabled")
+            if rot_enabled is None:
+                rot_enabled = settings.rotation_enabled
+            rx = s.get("rotation_x", settings.rotation_x)
+            ry = s.get("rotation_y", settings.rotation_y)
+            rz = s.get("rotation_z", settings.rotation_z)
         except Exception:
             per_part_rotation = {}
-        
+            scale_factor = settings.stl_scale_factor
+            rot_enabled = settings.rotation_enabled
+            rx, ry, rz = settings.rotation_x, settings.rotation_y, settings.rotation_z
+
         # Step 3: Convert parts to STL using LDView
         logger.info(f"Job {job_id}: Converting parts to STL with LDView")
         converter = STLConverter()
-        
-        scale_factor = settings.stl_scale_factor
-        rot_enabled = settings.rotation_enabled
-        rx, ry, rz = settings.rotation_x, settings.rotation_y, settings.rotation_z
         logger.info(f"Using scale factor {scale_factor}, rotation_enabled={rot_enabled} (X={rx}, Y={ry}, Z={rz}), per_part_rotation keys={len(per_part_rotation)}")
 
         stl_files = []
@@ -141,7 +149,8 @@ async def process_generation(
                 bypass_cache=bypass_cache,
                 scale_factor=scale_factor,
                 rotation_enabled=use_rot,
-                rotation_x=px, rotation_y=py, rotation_z=pz
+                rotation_x=px, rotation_y=py, rotation_z=pz,
+                db=db,
             )
             
             if stl_path and stl_path.exists():
@@ -266,13 +275,16 @@ async def generate_3mf(
     """Generate 3MF file for a LEGO set."""
     try:
         job_id = str(uuid.uuid4())
-        settings_json = json.dumps({
+        settings_obj = {
             "plate_width": request.plate_width,
             "plate_depth": request.plate_depth,
             "bypass_cache": request.bypass_cache,
             "generate_3mf": request.generate_3mf,
-            "generate_stl": request.generate_stl
-        })
+            "generate_stl": request.generate_stl,
+        }
+        if request.scale_factor is not None:
+            settings_obj["scale_factor"] = request.scale_factor
+        settings_json = json.dumps(settings_obj)
 
         job = Job(
             id=job_id,

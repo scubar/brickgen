@@ -39,47 +39,44 @@ async def get_settings():
 
 
 @router.post("/settings")
-async def update_settings(update: SettingsUpdate):
+async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db)):
     """Update application settings.
-    
+
     Note: This updates runtime settings only, not persisted.
     For production, consider using a database or config file.
-    
-    If stl_scale_factor is changed, STL cache is automatically cleared.
+
+    If stl_scale_factor is changed, STL cache is automatically cleared (files + DB).
     """
     cache_cleared = False
-    
+    converter = STLConverter()
+
     # Check if STL scale is being changed
     if update.stl_scale_factor is not None and update.stl_scale_factor != settings.stl_scale_factor:
         logger.info(f"STL scale changed from {settings.stl_scale_factor} to {update.stl_scale_factor}, clearing STL cache")
         settings.stl_scale_factor = update.stl_scale_factor
-        
-        # Clear STL cache since scaling has changed
         try:
-            converter = STLConverter()
-            deleted_count = converter.clear_cache()
+            deleted_count = converter.clear_cache(db=db)
             cache_cleared = True
             logger.info(f"Cleared {deleted_count} STL files due to scale change")
         except Exception as e:
             logger.error(f"Failed to clear cache after scale change: {e}")
-    
+
     if update.default_plate_width is not None:
         settings.default_plate_width = update.default_plate_width
-    
+
     if update.default_plate_depth is not None:
         settings.default_plate_depth = update.default_plate_depth
-    
+
     if update.default_plate_height is not None:
         settings.default_plate_height = update.default_plate_height
-    
+
     if update.part_spacing is not None:
         settings.part_spacing = update.part_spacing
-    
+
     if update.rotation_enabled is not None:
         if update.rotation_enabled != settings.rotation_enabled:
             try:
-                converter = STLConverter()
-                deleted_count = converter.clear_cache()
+                deleted_count = converter.clear_cache(db=db)
                 cache_cleared = True
                 logger.info(f"Cleared {deleted_count} STL files due to rotation change")
             except Exception as e:
@@ -94,8 +91,7 @@ async def update_settings(update: SettingsUpdate):
     if update.default_orientation_match_preview is not None:
         if update.default_orientation_match_preview != settings.default_orientation_match_preview:
             try:
-                converter = STLConverter()
-                deleted_count = converter.clear_cache()
+                deleted_count = converter.clear_cache(db=db)
                 cache_cleared = True
                 logger.info(f"Cleared {deleted_count} STL files due to default orientation change")
             except Exception as e:
@@ -206,12 +202,11 @@ async def get_cache_stats():
 
 
 @router.delete("/cache/clear")
-async def clear_cache():
-    """Clear all cached STL files."""
+async def clear_cache(db: Session = Depends(get_db)):
+    """Clear all cached STL files and STL cache DB rows."""
     try:
         converter = STLConverter()
-        deleted_count = converter.clear_cache()
-        
+        deleted_count = converter.clear_cache(db=db)
         return {
             "message": f"Cleared {deleted_count} STL files from cache",
             "deleted_count": deleted_count

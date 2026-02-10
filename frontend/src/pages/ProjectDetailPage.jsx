@@ -15,6 +15,7 @@ function ProjectDetailPage() {
   const [creatingJob, setCreatingJob] = useState(false)
   const [plateWidth, setPlateWidth] = useState(220)
   const [plateDepth, setPlateDepth] = useState(220)
+  const [scaleFactor, setScaleFactor] = useState(null) // null = use global default
   const [format3mf, setFormat3mf] = useState(true)
   const [formatStl, setFormatStl] = useState(true)
   const [bypassCache, setBypassCache] = useState(false)
@@ -133,6 +134,7 @@ function ProjectDetailPage() {
         setWizardGlobalSettings(s)
         setPlateWidth(s.default_plate_width ?? 220)
         setPlateDepth(s.default_plate_depth ?? 220)
+        setScaleFactor(null) // use global default for new job
       }
       if (partsRes?.ok) {
         const partsList = await partsRes.json()
@@ -181,7 +183,8 @@ function ProjectDetailPage() {
           generate_3mf: format3mf,
           generate_stl: formatStl,
           bypass_cache: bypassCache,
-          per_part_rotation: Object.keys(perPartRotation).length ? perPartRotation : undefined
+          per_part_rotation: Object.keys(perPartRotation).length ? perPartRotation : undefined,
+          scale_factor: (scaleFactor != null && scaleFactor > 0) ? scaleFactor : (wizardGlobalSettings?.stl_scale_factor ?? 10)
         })
       })
       if (!r.ok) throw new Error('Failed to create job')
@@ -458,10 +461,24 @@ function ProjectDetailPage() {
                     <span>Bypass cache (reconvert all parts from LDraw)</span>
                   </label>
                   <p className="text-sm text-dk-5/80">Leave unchecked to use cached STLs when possible.</p>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-dk-5">STL scale factor (optional)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0.01"
+                      max="100"
+                      placeholder={wizardGlobalSettings ? `Default: ${wizardGlobalSettings.stl_scale_factor ?? 10}` : 'Default: 10'}
+                      value={scaleFactor ?? ''}
+                      onChange={(e) => setScaleFactor(e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5"
+                    />
+                    <p className="text-xs text-dk-5/70 mt-1">Leave empty to use global default. Affects part size in mm (e.g. 10 = LDView cm to mm).</p>
+                  </div>
                   {wizardGlobalSettings && (
                     <div className="bg-dk-1 border border-dk-3 rounded p-3 text-sm text-dk-5">
-                      <p className="font-medium mb-1">Rotation &amp; scale (read-only)</p>
-                      <p>Scale: {wizardGlobalSettings.stl_scale_factor ?? 10} · Rotation: {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
+                      <p className="font-medium mb-1">Rotation (read-only)</p>
+                      <p>Rotation: {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
                     </div>
                   )}
                 </div>
@@ -541,7 +558,7 @@ function ProjectDetailPage() {
                     <p><strong>Per-part rotation:</strong> {Object.keys(perPartRotation).length} part(s) customized</p>
                   )}
                   {wizardGlobalSettings && (
-                    <p><strong>Rotation &amp; scale:</strong> Scale {(wizardGlobalSettings.stl_scale_factor ?? 10)} · {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
+                    <p><strong>Scale:</strong> {scaleFactor != null ? scaleFactor : `Default ${wizardGlobalSettings.stl_scale_factor ?? 10}`} · <strong>Rotation:</strong> {wizardGlobalSettings.rotation_enabled ? `X=${wizardGlobalSettings.rotation_x ?? 0}°, Y=${wizardGlobalSettings.rotation_y ?? 0}°, Z=${wizardGlobalSettings.rotation_z ?? 0}°` : 'Off'}</p>
                   )}
                 </div>
               )}

@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def _default_quality_key() -> str:
     """Canonical string for default LDView settings; hash matches get_ldview_quality_key() at defaults."""
     parts = [
-        "AllowPrimitiveSubstitution=1", "UseQualityStuds=0", "CurveQuality=2", "Seams=0", "SeamWidth=0",
+        "AllowPrimitiveSubstitution=1", "UseQualityStuds=1", "CurveQuality=2", "Seams=0", "SeamWidth=0",
         "BFC=1", "BoundingBoxesOnly=0", "ShowHighlightLines=0", "PolygonOffset=1", "EdgeThickness=0.0",
         "LineSmoothing=0", "BlackHighlights=0", "ConditionalHighlights=0", "Wireframe=0",
         "WireframeThickness=0.0", "RemoveHiddenLines=0", "TextureStuds=1", "Texmaps=1", "HiResPrimitives=0",

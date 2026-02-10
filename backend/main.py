@@ -10,9 +10,10 @@ from backend.database import init_db
 from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts
 from backend.version import __version__
 
-# Configure logging
+# Configure logging (level from settings.log_level / LOG_LEVEL env)
+_log_level = getattr(logging, str(settings.log_level).upper(), logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=_log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)

@@ -19,7 +19,7 @@ function SetDetailPage() {
   const [partsPage, setPartsPage] = useState(1)
   const [expandedPreview, setExpandedPreview] = useState(null)
 
-  const PARTS_PAGE_SIZE = 20
+  const PARTS_PAGE_SIZE = 5
   const partsTotalPages = Math.max(1, Math.ceil(partsList.length / PARTS_PAGE_SIZE))
   const partsToShow = partsList.slice((partsPage - 1) * PARTS_PAGE_SIZE, partsPage * PARTS_PAGE_SIZE)
 

@@ -30,8 +30,8 @@ function ProjectDetailPage() {
   const [partsPage, setPartsPage] = useState(1)
   const [colorRefPage, setColorRefPage] = useState(1)
   const [deletingJobId, setDeletingJobId] = useState(null)
-  const WIZARD_PARTS_PAGE_SIZE = 20
-  const PARTS_PAGE_SIZE = 15
+  const WIZARD_PARTS_PAGE_SIZE = 5
+  const PARTS_PAGE_SIZE = 5
   const COLOR_REF_PAGE_SIZE = 20
   const wizardPartsTotalPages = Math.max(1, Math.ceil(wizardParts.length / WIZARD_PARTS_PAGE_SIZE))
   const wizardPartsToShow = wizardParts.slice((wizardPartsPage - 1) * WIZARD_PARTS_PAGE_SIZE, wizardPartsPage * WIZARD_PARTS_PAGE_SIZE)

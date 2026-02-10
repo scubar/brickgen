@@ -33,6 +33,7 @@ class TestParsePreviewFilename:
             "rotation_x": 0,
             "rotation_y": 0,
             "rotation_z": 0,
+            "quality_key": "",
         }
 
     def test_with_rotation(self):
@@ -42,6 +43,17 @@ class TestParsePreviewFilename:
             "rotation_x": -90,
             "rotation_y": 0,
             "rotation_z": 0,
+            "quality_key": "",
+        }
+
+    def test_with_quality_key(self):
+        assert _parse_preview_filename("3005_256_qabc123") == {
+            "ldraw_id": "3005",
+            "size": 256,
+            "rotation_x": 0,
+            "rotation_y": 0,
+            "rotation_z": 0,
+            "quality_key": "abc123",
         }
 
     def test_with_color_suffix(self):

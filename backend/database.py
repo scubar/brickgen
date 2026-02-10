@@ -95,16 +95,50 @@ class AppSettings(Base):
     rotation_z = Column(Float, default=0.0)
     default_orientation_match_preview = Column(Boolean, default=True)
     auto_generate_part_previews = Column(Boolean, default=True)
+    # LDView quality settings
+    ldview_allow_primitive_substitution = Column(Boolean, default=True)
+    ldview_use_quality_studs = Column(Boolean, default=True)
+    ldview_curve_quality = Column(Integer, default=2)
+    ldview_seams = Column(Boolean, default=False)
+    ldview_seam_width = Column(Integer, default=0)
+    ldview_bfc = Column(Boolean, default=True)
+    ldview_bounding_boxes_only = Column(Boolean, default=False)
+    ldview_show_highlight_lines = Column(Boolean, default=False)
+    ldview_polygon_offset = Column(Boolean, default=True)
+    ldview_edge_thickness = Column(Float, default=0.0)
+    ldview_line_smoothing = Column(Boolean, default=False)
+    ldview_black_highlights = Column(Boolean, default=False)
+    ldview_conditional_highlights = Column(Boolean, default=False)
+    ldview_wireframe = Column(Boolean, default=False)
+    ldview_wireframe_thickness = Column(Float, default=0.0)
+    ldview_remove_hidden_lines = Column(Boolean, default=False)
+    ldview_texture_studs = Column(Boolean, default=True)
+    ldview_texmaps = Column(Boolean, default=True)
+    ldview_hi_res_primitives = Column(Boolean, default=False)
+    ldview_texture_filter_type = Column(Integer, default=9987)
+    ldview_aniso_level = Column(Integer, default=0)
+    ldview_texture_offset_factor = Column(Float, default=5.0)
+    ldview_lighting = Column(Boolean, default=True)
+    ldview_use_quality_lighting = Column(Boolean, default=False)
+    ldview_use_specular = Column(Boolean, default=True)
+    ldview_subdued_lighting = Column(Boolean, default=False)
+    ldview_perform_smoothing = Column(Boolean, default=True)
+    ldview_use_flat_shading = Column(Boolean, default=False)
+    ldview_antialias = Column(Integer, default=0)
+    ldview_process_ldconfig = Column(Boolean, default=True)
+    ldview_sort_transparent = Column(Boolean, default=True)
+    ldview_use_stipple = Column(Boolean, default=False)
+    ldview_memory_usage = Column(Integer, default=2)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class STLCache(Base):
-    """Cache for converted STL files. Key: (part_num, scale, rotation_enabled, rotation_x, rotation_y, rotation_z)."""
+    """Cache for converted STL files. Key: (part_num, scale, rotation_*, quality_key)."""
     __tablename__ = "stl_cache"
     __table_args__ = (
         UniqueConstraint(
             "part_num", "scale", "rotation_enabled",
-            "rotation_x", "rotation_y", "rotation_z",
+            "rotation_x", "rotation_y", "rotation_z", "quality_key",
             name="uq_stl_cache_key"
         ),
     )
@@ -118,6 +152,7 @@ class STLCache(Base):
     rotation_y = Column(Float, default=0.0)
     rotation_z = Column(Float, default=0.0)
     scale = Column(Float, default=10.0)
+    quality_key = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

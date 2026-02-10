@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 from backend.config import settings
-from backend.core.ldview_converter import LDViewConverter
+from backend.core.ldview_converter import LDViewConverter, get_ldview_quality_key
 from backend.core.stl_orientation import STLOrienter
 
 if TYPE_CHECKING:
@@ -19,6 +19,7 @@ def _cache_filename(
     rotation_x: float,
     rotation_y: float,
     rotation_z: float,
+    quality_key: str,
 ) -> str:
     """Build cache filename stem. Omit segments when 0 or false to keep names short."""
     parts = [part_num]
@@ -32,6 +33,8 @@ def _cache_filename(
         parts.append(f"rotationY{int(round(rotation_y))}")
     if rotation_z != 0:
         parts.append(f"rotationZ{int(round(rotation_z))}")
+    if quality_key:
+        parts.append(f"q{quality_key}")
     return "_".join(parts)
 
 
@@ -66,8 +69,9 @@ class STLConverter:
             logger.warning("No LDraw ID provided")
             return None
 
+        quality_key = get_ldview_quality_key()
         stem = _cache_filename(
-            ldraw_id, scale_factor, rotation_enabled, rotation_x, rotation_y, rotation_z
+            ldraw_id, scale_factor, rotation_enabled, rotation_x, rotation_y, rotation_z, quality_key
         )
         stl_path = self.cache_dir / f"{stem}.stl"
 
@@ -83,6 +87,7 @@ class STLConverter:
                     STLCache.rotation_x == rotation_x,
                     STLCache.rotation_y == rotation_y,
                     STLCache.rotation_z == rotation_z,
+                    STLCache.quality_key == quality_key,
                 )
                 .first()
             )
@@ -98,8 +103,9 @@ class STLConverter:
             logger.debug(f"Using cached STL for {ldraw_id} (filesystem)")
             return stl_path
 
+        rot_detail = f", rotation=({rotation_x}, {rotation_y}, {rotation_z})" if rotation_enabled else ""
         logger.info(
-            f"Converting {ldraw_id} with LDView (scale={scale_factor}, rotation={rotation_enabled})..."
+            f"Converting {ldraw_id} with LDView (scale={scale_factor}, rotation_enabled={rotation_enabled}{rot_detail}, quality_key={quality_key})..."
         )
         if not self.converter.convert_to_stl(ldraw_id, stl_path, scale_factor=scale_factor):
             logger.warning(f"Failed to convert {ldraw_id} to STL")
@@ -127,6 +133,7 @@ class STLConverter:
                     STLCache.rotation_x == rotation_x,
                     STLCache.rotation_y == rotation_y,
                     STLCache.rotation_z == rotation_z,
+                    STLCache.quality_key == quality_key,
                 )
                 .first()
             )
@@ -144,6 +151,7 @@ class STLConverter:
                     rotation_y=rotation_y,
                     rotation_z=rotation_z,
                     scale=scale_factor,
+                    quality_key=quality_key,
                 )
                 db.add(entry)
                 db.commit()

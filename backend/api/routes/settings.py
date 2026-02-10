@@ -31,6 +31,21 @@ class ApiKeyUpdate(BaseModel):
     api_key: str
 
 
+def _get_bool(row, attr: str, default: bool) -> bool:
+    v = getattr(row, attr, None)
+    return bool(v) if v is not None else default
+
+
+def _get_float(row, attr: str, default: float) -> float:
+    v = getattr(row, attr, None)
+    return float(v) if v is not None else default
+
+
+def _get_int(row, attr: str, default: int) -> int:
+    v = getattr(row, attr, None)
+    return int(v) if v is not None else default
+
+
 def _row_to_response(row: AppSettings) -> SettingsResponse:
     """Build SettingsResponse from AppSettings row."""
     return SettingsResponse(
@@ -43,9 +58,50 @@ def _row_to_response(row: AppSettings) -> SettingsResponse:
         rotation_x=float(row.rotation_x if row.rotation_x is not None else 0.0),
         rotation_y=float(row.rotation_y if row.rotation_y is not None else 0.0),
         rotation_z=float(row.rotation_z if row.rotation_z is not None else 0.0),
-        default_orientation_match_preview=bool(row.default_orientation_match_preview if row.default_orientation_match_preview is not None else True),
-        auto_generate_part_previews=bool(row.auto_generate_part_previews if row.auto_generate_part_previews is not None else True),
+        default_orientation_match_preview=_get_bool(row, "default_orientation_match_preview", True),
+        auto_generate_part_previews=_get_bool(row, "auto_generate_part_previews", True),
+        ldview_allow_primitive_substitution=_get_bool(row, "ldview_allow_primitive_substitution", True),
+        ldview_use_quality_studs=_get_bool(row, "ldview_use_quality_studs", True),
+        ldview_curve_quality=_get_int(row, "ldview_curve_quality", 2),
+        ldview_seams=_get_bool(row, "ldview_seams", False),
+        ldview_seam_width=_get_int(row, "ldview_seam_width", 0),
+        ldview_bfc=_get_bool(row, "ldview_bfc", True),
+        ldview_bounding_boxes_only=_get_bool(row, "ldview_bounding_boxes_only", False),
+        ldview_show_highlight_lines=_get_bool(row, "ldview_show_highlight_lines", False),
+        ldview_polygon_offset=_get_bool(row, "ldview_polygon_offset", True),
+        ldview_edge_thickness=_get_float(row, "ldview_edge_thickness", 0.0),
+        ldview_line_smoothing=_get_bool(row, "ldview_line_smoothing", False),
+        ldview_black_highlights=_get_bool(row, "ldview_black_highlights", False),
+        ldview_conditional_highlights=_get_bool(row, "ldview_conditional_highlights", False),
+        ldview_wireframe=_get_bool(row, "ldview_wireframe", False),
+        ldview_wireframe_thickness=_get_float(row, "ldview_wireframe_thickness", 0.0),
+        ldview_remove_hidden_lines=_get_bool(row, "ldview_remove_hidden_lines", False),
+        ldview_texture_studs=_get_bool(row, "ldview_texture_studs", True),
+        ldview_texmaps=_get_bool(row, "ldview_texmaps", True),
+        ldview_hi_res_primitives=_get_bool(row, "ldview_hi_res_primitives", False),
+        ldview_texture_filter_type=_get_int(row, "ldview_texture_filter_type", 9987),
+        ldview_aniso_level=_get_int(row, "ldview_aniso_level", 0),
+        ldview_texture_offset_factor=_get_float(row, "ldview_texture_offset_factor", 5.0),
+        ldview_lighting=_get_bool(row, "ldview_lighting", True),
+        ldview_use_quality_lighting=_get_bool(row, "ldview_use_quality_lighting", False),
+        ldview_use_specular=_get_bool(row, "ldview_use_specular", True),
+        ldview_subdued_lighting=_get_bool(row, "ldview_subdued_lighting", False),
+        ldview_perform_smoothing=_get_bool(row, "ldview_perform_smoothing", True),
+        ldview_use_flat_shading=_get_bool(row, "ldview_use_flat_shading", False),
+        ldview_antialias=_get_int(row, "ldview_antialias", 0),
+        ldview_process_ldconfig=_get_bool(row, "ldview_process_ldconfig", True),
+        ldview_sort_transparent=_get_bool(row, "ldview_sort_transparent", True),
+        ldview_use_stipple=_get_bool(row, "ldview_use_stipple", False),
+        ldview_memory_usage=_get_int(row, "ldview_memory_usage", 2),
     )
+
+
+def sync_config_from_db(db: Session) -> None:
+    """Load app settings from DB and sync into in-memory config. Call before STL/preview conversion so LDView uses persisted settings."""
+    row = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    if row is not None:
+        _sync_config_from_row(row)
+        logger.debug("Synced in-memory config from app_settings (LDView/STL will use persisted values)")
 
 
 def _sync_config_from_row(row: AppSettings) -> None:
@@ -59,8 +115,30 @@ def _sync_config_from_row(row: AppSettings) -> None:
     settings.rotation_x = float(row.rotation_x if row.rotation_x is not None else 0.0)
     settings.rotation_y = float(row.rotation_y if row.rotation_y is not None else 0.0)
     settings.rotation_z = float(row.rotation_z if row.rotation_z is not None else 0.0)
-    settings.default_orientation_match_preview = bool(row.default_orientation_match_preview if row.default_orientation_match_preview is not None else True)
-    settings.auto_generate_part_previews = bool(row.auto_generate_part_previews if row.auto_generate_part_previews is not None else True)
+    settings.default_orientation_match_preview = _get_bool(row, "default_orientation_match_preview", True)
+    settings.auto_generate_part_previews = _get_bool(row, "auto_generate_part_previews", True)
+    for attr in (
+        "ldview_allow_primitive_substitution", "ldview_use_quality_studs", "ldview_curve_quality",
+        "ldview_seams", "ldview_seam_width", "ldview_bfc", "ldview_bounding_boxes_only",
+        "ldview_show_highlight_lines", "ldview_polygon_offset", "ldview_edge_thickness",
+        "ldview_line_smoothing", "ldview_black_highlights", "ldview_conditional_highlights",
+        "ldview_wireframe", "ldview_wireframe_thickness", "ldview_remove_hidden_lines",
+        "ldview_texture_studs", "ldview_texmaps", "ldview_hi_res_primitives",
+        "ldview_texture_filter_type", "ldview_aniso_level", "ldview_texture_offset_factor",
+        "ldview_lighting", "ldview_use_quality_lighting", "ldview_use_specular",
+        "ldview_subdued_lighting", "ldview_perform_smoothing", "ldview_use_flat_shading",
+        "ldview_antialias", "ldview_process_ldconfig", "ldview_sort_transparent",
+        "ldview_use_stipple", "ldview_memory_usage",
+    ):
+        if hasattr(row, attr):
+            v = getattr(row, attr)
+            if v is not None and hasattr(settings, attr):
+                if isinstance(v, bool):
+                    setattr(settings, attr, bool(v))
+                elif isinstance(v, float):
+                    setattr(settings, attr, float(v))
+                else:
+                    setattr(settings, attr, int(v) if isinstance(getattr(settings, attr), int) else v)
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -83,15 +161,71 @@ async def get_settings(db: Session = Depends(get_db)):
         rotation_z=float(settings.rotation_z),
         default_orientation_match_preview=settings.default_orientation_match_preview,
         auto_generate_part_previews=settings.auto_generate_part_previews,
+        ldview_allow_primitive_substitution=getattr(settings, "ldview_allow_primitive_substitution", True),
+        ldview_use_quality_studs=getattr(settings, "ldview_use_quality_studs", True),
+        ldview_curve_quality=getattr(settings, "ldview_curve_quality", 2),
+        ldview_seams=getattr(settings, "ldview_seams", False),
+        ldview_seam_width=getattr(settings, "ldview_seam_width", 0),
+        ldview_bfc=getattr(settings, "ldview_bfc", True),
+        ldview_bounding_boxes_only=getattr(settings, "ldview_bounding_boxes_only", False),
+        ldview_show_highlight_lines=getattr(settings, "ldview_show_highlight_lines", False),
+        ldview_polygon_offset=getattr(settings, "ldview_polygon_offset", True),
+        ldview_edge_thickness=getattr(settings, "ldview_edge_thickness", 0.0),
+        ldview_line_smoothing=getattr(settings, "ldview_line_smoothing", False),
+        ldview_black_highlights=getattr(settings, "ldview_black_highlights", False),
+        ldview_conditional_highlights=getattr(settings, "ldview_conditional_highlights", False),
+        ldview_wireframe=getattr(settings, "ldview_wireframe", False),
+        ldview_wireframe_thickness=getattr(settings, "ldview_wireframe_thickness", 0.0),
+        ldview_remove_hidden_lines=getattr(settings, "ldview_remove_hidden_lines", False),
+        ldview_texture_studs=getattr(settings, "ldview_texture_studs", True),
+        ldview_texmaps=getattr(settings, "ldview_texmaps", True),
+        ldview_hi_res_primitives=getattr(settings, "ldview_hi_res_primitives", False),
+        ldview_texture_filter_type=getattr(settings, "ldview_texture_filter_type", 9987),
+        ldview_aniso_level=getattr(settings, "ldview_aniso_level", 0),
+        ldview_texture_offset_factor=getattr(settings, "ldview_texture_offset_factor", 5.0),
+        ldview_lighting=getattr(settings, "ldview_lighting", True),
+        ldview_use_quality_lighting=getattr(settings, "ldview_use_quality_lighting", False),
+        ldview_use_specular=getattr(settings, "ldview_use_specular", True),
+        ldview_subdued_lighting=getattr(settings, "ldview_subdued_lighting", False),
+        ldview_perform_smoothing=getattr(settings, "ldview_perform_smoothing", True),
+        ldview_use_flat_shading=getattr(settings, "ldview_use_flat_shading", False),
+        ldview_antialias=getattr(settings, "ldview_antialias", 0),
+        ldview_process_ldconfig=getattr(settings, "ldview_process_ldconfig", True),
+        ldview_sort_transparent=getattr(settings, "ldview_sort_transparent", True),
+        ldview_use_stipple=getattr(settings, "ldview_use_stipple", False),
+        ldview_memory_usage=getattr(settings, "ldview_memory_usage", 2),
     )
+
+
+def _validate_ldview_ranges(update: SettingsUpdate) -> None:
+    """Raise HTTPException if any LDView numeric field is out of range."""
+    if update.ldview_curve_quality is not None and not (1 <= update.ldview_curve_quality <= 12):
+        raise HTTPException(status_code=400, detail="ldview_curve_quality must be between 1 and 12")
+    if update.ldview_seam_width is not None and not (0 <= update.ldview_seam_width <= 500):
+        raise HTTPException(status_code=400, detail="ldview_seam_width must be between 0 and 500")
+    if update.ldview_edge_thickness is not None and not (0 <= update.ldview_edge_thickness <= 5):
+        raise HTTPException(status_code=400, detail="ldview_edge_thickness must be between 0 and 5")
+    if update.ldview_wireframe_thickness is not None and not (0 <= update.ldview_wireframe_thickness <= 5):
+        raise HTTPException(status_code=400, detail="ldview_wireframe_thickness must be between 0 and 5")
+    if update.ldview_antialias is not None and update.ldview_antialias < 0:
+        raise HTTPException(status_code=400, detail="ldview_antialias must be >= 0")
+    if update.ldview_texture_offset_factor is not None and not (1 <= update.ldview_texture_offset_factor <= 10):
+        raise HTTPException(status_code=400, detail="ldview_texture_offset_factor must be between 1 and 10")
+    if update.ldview_memory_usage is not None and update.ldview_memory_usage not in (0, 1, 2):
+        raise HTTPException(status_code=400, detail="ldview_memory_usage must be 0 (Low), 1 (Medium), or 2 (High)")
+    if update.ldview_texture_filter_type is not None and update.ldview_texture_filter_type not in (9984, 9985, 9987):
+        raise HTTPException(status_code=400, detail="ldview_texture_filter_type must be 9984, 9985, or 9987")
+    if update.ldview_aniso_level is not None and update.ldview_aniso_level < 0:
+        raise HTTPException(status_code=400, detail="ldview_aniso_level must be >= 0")
 
 
 @router.post("/settings")
 async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db)):
     """Update application settings. Persists to database and syncs in-memory config.
 
-    If rotation or default_orientation_match_preview is changed, STL cache is cleared (files + DB).
+    If rotation, default_orientation_match_preview, or any LDView quality setting is changed, STL cache is cleared.
     """
+    _validate_ldview_ranges(update)
     cache_cleared = False
     converter = STLConverter()
 
@@ -106,6 +240,22 @@ async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db))
     # Capture previous values for cache-clear logic (use current in-memory or row)
     prev_rotation = getattr(row, "rotation_enabled", False)
     prev_orientation = getattr(row, "default_orientation_match_preview", True)
+
+    # Check if any LDView setting is being updated (clear cache once for any ldview change)
+    ldview_attrs = [
+        "ldview_allow_primitive_substitution", "ldview_use_quality_studs", "ldview_curve_quality",
+        "ldview_seams", "ldview_seam_width", "ldview_bfc", "ldview_bounding_boxes_only",
+        "ldview_show_highlight_lines", "ldview_polygon_offset", "ldview_edge_thickness",
+        "ldview_line_smoothing", "ldview_black_highlights", "ldview_conditional_highlights",
+        "ldview_wireframe", "ldview_wireframe_thickness", "ldview_remove_hidden_lines",
+        "ldview_texture_studs", "ldview_texmaps", "ldview_hi_res_primitives",
+        "ldview_texture_filter_type", "ldview_aniso_level", "ldview_texture_offset_factor",
+        "ldview_lighting", "ldview_use_quality_lighting", "ldview_use_specular",
+        "ldview_subdued_lighting", "ldview_perform_smoothing", "ldview_use_flat_shading",
+        "ldview_antialias", "ldview_process_ldconfig", "ldview_sort_transparent",
+        "ldview_use_stipple", "ldview_memory_usage",
+    ]
+    any_ldview_update = any(getattr(update, a, None) is not None for a in ldview_attrs)
 
     # Apply updates to row (persist to DB)
     if update.default_plate_width is not None:
@@ -144,6 +294,19 @@ async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db))
         row.default_orientation_match_preview = update.default_orientation_match_preview
     if update.auto_generate_part_previews is not None:
         row.auto_generate_part_previews = update.auto_generate_part_previews
+
+    for attr in ldview_attrs:
+        v = getattr(update, attr, None)
+        if v is not None and hasattr(row, attr):
+            setattr(row, attr, v)
+
+    if any_ldview_update and not cache_cleared:
+        try:
+            deleted_count = converter.clear_cache(db=db)
+            cache_cleared = True
+            logger.info(f"Cleared {deleted_count} STL files due to LDView quality setting change")
+        except Exception as e:
+            logger.error(f"Failed to clear cache after LDView setting change: {e}")
 
     db.commit()
     db.refresh(row)

@@ -1,12 +1,88 @@
 """LDView CLI wrapper for converting LDraw parts to STL."""
+import hashlib
 import subprocess
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from backend.config import settings
 import struct
 
 logger = logging.getLogger(__name__)
+
+# Which LDView settings affect STL export vs preview (PNG snapshot).
+# Format: (config_attr_suffix, LDViewName, affects_stl, affects_preview)
+_LDVIEW_SETTINGS = [
+    ("allow_primitive_substitution", "AllowPrimitiveSubstitution", True, True),
+    ("use_quality_studs", "UseQualityStuds", True, True),
+    ("curve_quality", "CurveQuality", True, True),
+    ("seams", "Seams", True, False),
+    ("seam_width", "SeamWidth", True, False),
+    ("bfc", "BFC", True, True),
+    ("bounding_boxes_only", "BoundingBoxesOnly", True, True),
+    ("show_highlight_lines", "ShowHighlightLines", False, True),
+    ("polygon_offset", "PolygonOffset", False, True),
+    ("edge_thickness", "EdgeThickness", False, True),
+    ("line_smoothing", "LineSmoothing", False, True),
+    ("black_highlights", "BlackHighlights", False, True),
+    ("conditional_highlights", "ConditionalHighlights", False, True),
+    ("wireframe", "Wireframe", False, True),
+    ("wireframe_thickness", "WireframeThickness", False, True),
+    ("remove_hidden_lines", "RemoveHiddenLines", False, True),
+    ("texture_studs", "TextureStuds", False, True),
+    ("texmaps", "Texmaps", False, True),
+    ("hi_res_primitives", "HiResPrimitives", True, True),
+    ("texture_filter_type", "TextureFilterType", False, True),
+    ("aniso_level", "AnisoLevel", False, True),
+    ("texture_offset_factor", "TextureOffsetFactor", False, True),
+    ("lighting", "Lighting", False, True),
+    ("use_quality_lighting", "UseQualityLighting", False, True),
+    ("use_specular", "UseSpecular", False, True),
+    ("subdued_lighting", "SubduedLighting", False, True),
+    ("perform_smoothing", "PerformSmoothing", True, True),
+    ("use_flat_shading", "UseFlatShading", False, True),
+    ("antialias", "Antialias", False, True),
+    ("process_ldconfig", "ProcessLDConfig", True, True),
+    ("sort_transparent", "SortTransparent", False, True),
+    ("use_stipple", "UseStipple", False, True),
+    ("memory_usage", "MemoryUsage", True, True),
+]
+
+
+def _ldview_quality_args(for_stl: bool) -> List[str]:
+    """Build -SettingName=value args from current settings. for_stl=True for STL export, False for snapshot."""
+    args = []
+    for suffix, name, affects_stl, affects_preview in _LDVIEW_SETTINGS:
+        if for_stl and not affects_stl:
+            continue
+        if not for_stl and not affects_preview:
+            continue
+        attr = getattr(settings, f"ldview_{suffix}", None)
+        if attr is None:
+            continue
+        if isinstance(attr, bool):
+            args.append(f"-{name}={1 if attr else 0}")
+        elif isinstance(attr, float):
+            args.append(f"-{name}={attr}")
+        else:
+            args.append(f"-{name}={attr}")
+    return args
+
+
+def get_ldview_quality_key() -> str:
+    """Deterministic short key from all LDView quality settings for cache (STL and preview)."""
+    parts = []
+    for suffix, name, _stl, _preview in _LDVIEW_SETTINGS:
+        attr = getattr(settings, f"ldview_{suffix}", None)
+        if attr is None:
+            continue
+        if isinstance(attr, bool):
+            parts.append(f"{name}={1 if attr else 0}")
+        elif isinstance(attr, float):
+            parts.append(f"{name}={attr}")
+        else:
+            parts.append(f"{name}={attr}")
+    canonical = "_".join(parts)
+    return hashlib.md5(canonical.encode()).hexdigest()[:16]
 
 
 class LDViewConverter:
@@ -50,7 +126,8 @@ class LDViewConverter:
                 '-AutoCrop=0',  # Don't auto-crop
                 '-LDrawDir=' + str(self.ldraw_library_path)  # Explicit LDraw path
             ]
-            
+            cmd.extend(_ldview_quality_args(for_stl=True))
+
             # Set environment variables for LDView
             env = {
                 'LDRAWDIR': str(self.ldraw_library_path),
@@ -194,6 +271,7 @@ class LDViewConverter:
                 '-AutoCrop=1',
                 '-LDrawDir=' + str(self.ldraw_library_path)
             ]
+            cmd.extend(_ldview_quality_args(for_stl=False))
             env = {'LDRAWDIR': str(self.ldraw_library_path), 'PATH': '/usr/local/bin:/usr/bin:/bin'}
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
             if result.returncode != 0:

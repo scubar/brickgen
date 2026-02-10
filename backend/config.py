@@ -1,6 +1,7 @@
 """Configuration management for BrickGen application."""
 import os
 from pathlib import Path
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -43,10 +44,8 @@ class Settings(BaseSettings):
     
     # Job Settings
     max_job_age_hours: int = 24
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+
+    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 settings = Settings()

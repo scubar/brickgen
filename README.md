@@ -15,7 +15,7 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 ## Technology Stack
 
 **Backend:**
-- Python 3.11+ with FastAPI
+- Python 3.13+ with FastAPI
 - SQLite for caching and job tracking
 - LDView CLI tool for LDraw → STL conversion
 - LDraw parts library (10,000+ LEGO parts)
@@ -129,6 +129,11 @@ pipenv shell --path backend
 uvicorn backend.main:app --reload
 ```
 
+**Run tests:** (use the venv; do not use `--system` locally)
+```bash
+pipenv run --path backend python -m pytest backend/tests -v --tb=short
+```
+
 **Frontend:**
 ```bash
 cd frontend
@@ -230,7 +235,9 @@ MIT License - see LICENSE file for details
 - [LDraw](https://www.ldraw.org/) - LEGO CAD parts library
 - [LDView](https://github.com/tcobbs/ldview) - LDraw viewer and STL export (included under its MIT license option)
 - [Rebrickable](https://rebrickable.com/) - LEGO set search and parts inventory
-- [lib3mf](https://github.com/3MFConsortium/lib3mf) - 3MF file format library
+- [3MF specification](https://3mf.io/specification/) - 3MF file format (BrickGen generates 3MF in-house; no lib3mf dependency)
+
+For the full list of third-party software and licenses, see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
 ## Disclaimer
 

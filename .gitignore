@@ -25,9 +25,9 @@ database/
 *.db
 *.db-journal
 
-# Environment
-.env
-.env.local
+# Environment (ignore all .env variants; keep .env.example tracked)
+.env*
+!.env.example
 
 # IDE
 .vscode/

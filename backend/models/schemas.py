@@ -21,19 +21,12 @@ class SetDetail(SetSearchResult):
     cached_at: Optional[str] = None  # ISO timestamp when set was cached (if from cache)
 
 
-class PartInfo(BaseModel):
-    """Individual part information."""
-    part_num: str
-    name: str
-    quantity: int
-    color: Optional[str] = None
-
-
 class GenerateRequest(BaseModel):
     """Request to generate output; at least one of generate_3mf or generate_stl must be True."""
     set_num: str
     plate_width: int = Field(default=220, ge=100, le=2000)
     plate_depth: int = Field(default=220, ge=100, le=2000)
+    plate_height: int = Field(default=250, ge=100, le=2000)
     bypass_cache: bool = Field(default=False)
     generate_3mf: bool = Field(default=True)
     generate_stl: bool = Field(default=True)

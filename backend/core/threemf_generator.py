@@ -38,6 +38,7 @@ class ThreeMFGenerator:
         parts: List[Tuple[Any, ...]],  # (stl_path, ldraw_id, quantity) or (..., color_rgb)
         plate_width: int,
         plate_depth: int,
+        plate_height: int,
         output_path: Path
     ) -> bool:
         """Generate 3MF file with parts arranged on build plate(s) using bin packing.
@@ -47,6 +48,7 @@ class ThreeMFGenerator:
                    color_rgb optional, e.g. "FF5500" (hex without #).
             plate_width: Build plate width in mm
             plate_depth: Build plate depth in mm
+            plate_height: Build plate height in mm (for reference; packing uses width/depth)
             output_path: Where to save the 3MF file
         
         Returns:
@@ -72,7 +74,7 @@ class ThreeMFGenerator:
             if not part_meshes:
                 logger.error("No valid meshes to pack")
                 return False
-            placements = self._pack_parts(part_meshes, plate_width, plate_depth)
+            placements = self._pack_parts(part_meshes, plate_width, plate_depth, plate_height)
             if not placements:
                 logger.error("Parts do not fit on build plate(s)")
                 return False
@@ -149,13 +151,14 @@ class ThreeMFGenerator:
             'center': [center_x, center_y, center_z]
         }
     
-    def _pack_parts(self, part_meshes: List[Dict], plate_width: int, plate_depth: int) -> Optional[List[Dict]]:
+    def _pack_parts(self, part_meshes: List[Dict], plate_width: int, plate_depth: int, plate_height: int) -> Optional[List[Dict]]:
         """Pack parts onto build plate using shelf algorithm.
         
         Args:
             part_meshes: List of part mesh dictionaries
             plate_width: Build plate width in mm
             plate_depth: Build plate depth in mm
+            plate_height: Build plate height in mm (for reference; packing uses width/depth)
         
         Returns:
             List of placements with mesh_data and translation, or None if doesn't fit

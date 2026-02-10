@@ -231,6 +231,7 @@ async def create_project_job(
         project.set_num,
         body.plate_width,
         body.plate_depth,
+        body.plate_height,
         body.bypass_cache,
         body.generate_3mf,
         body.generate_stl

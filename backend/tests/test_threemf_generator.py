@@ -88,7 +88,7 @@ class TestThreeMFGeneratorPackParts:
         part_meshes = [
             {"mesh_data": mesh, "ldraw_id": "3005", "bbox": bbox, "quantity": 1, "color_rgb": None}
         ]
-        placements = gen._pack_parts(part_meshes, plate_width=220, plate_depth=220)
+        placements = gen._pack_parts(part_meshes, plate_width=220, plate_depth=220, plate_height=250)
         assert placements is not None
         assert len(placements) == 1
         assert "translation" in placements[0]
@@ -104,7 +104,7 @@ class TestThreeMFGeneratorPackParts:
         part_meshes = [
             {"mesh_data": mesh, "ldraw_id": "x", "bbox": bbox, "quantity": 2, "color_rgb": "FF0000"}
         ]
-        placements = gen._pack_parts(part_meshes, plate_width=100, plate_depth=100)
+        placements = gen._pack_parts(part_meshes, plate_width=100, plate_depth=100, plate_height=250)
         assert placements is not None
         assert len(placements) == 2
 
@@ -169,7 +169,7 @@ class TestThreeMFGeneratorGenerate3mf:
         gen = ThreeMFGenerator(part_spacing=2)
         parts = [(str(stl), "3005", 1)]
         out = tmp_path / "project.3mf"
-        assert gen.generate_3mf(parts, plate_width=220, plate_depth=220, output_path=out) is True
+        assert gen.generate_3mf(parts, plate_width=220, plate_depth=220, plate_height=250, output_path=out) is True
         assert out.exists()
 
     def test_generate_3mf_with_color(self, tmp_path):
@@ -178,5 +178,5 @@ class TestThreeMFGeneratorGenerate3mf:
         gen = ThreeMFGenerator(part_spacing=2)
         parts = [(str(stl), "3005", 1, "FF5500")]
         out = tmp_path / "project.3mf"
-        assert gen.generate_3mf(parts, plate_width=220, plate_depth=220, output_path=out) is True
+        assert gen.generate_3mf(parts, plate_width=220, plate_depth=220, plate_height=250, output_path=out) is True
         assert out.exists()

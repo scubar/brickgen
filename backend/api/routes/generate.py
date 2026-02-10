@@ -27,6 +27,7 @@ async def process_generation(
     set_num: str,
     plate_width: int,
     plate_depth: int,
+    plate_height: int,
     bypass_cache: bool = False,
     generate_3mf: bool = True,
     generate_stl: bool = True
@@ -201,7 +202,7 @@ async def process_generation(
                     for path, info in unique_parts.items()
                 ]
                 threemf_gen = ThreeMFGenerator(part_spacing=settings.part_spacing)
-                if not threemf_gen.generate_3mf(parts_for_3mf, plate_width, plate_depth, threemf_path):
+                if not threemf_gen.generate_3mf(parts_for_3mf, plate_width, plate_depth, plate_height, threemf_path):
                     raise RuntimeError("3MF generation returned False")
             except Exception as e:
                 logger.error(f"Job {job_id}: 3MF generation error: {e}")
@@ -280,6 +281,7 @@ async def generate_3mf(
         settings_obj = {
             "plate_width": request.plate_width,
             "plate_depth": request.plate_depth,
+            "plate_height": request.plate_height,
             "bypass_cache": request.bypass_cache,
             "generate_3mf": request.generate_3mf,
             "generate_stl": request.generate_stl,
@@ -295,6 +297,7 @@ async def generate_3mf(
             progress=0,
             plate_width=request.plate_width,
             plate_depth=request.plate_depth,
+            plate_height=request.plate_height,
             brickgen_version=__version__,
             project_id=request.project_id,
             settings=settings_json
@@ -309,6 +312,7 @@ async def generate_3mf(
             request.set_num,
             request.plate_width,
             request.plate_depth,
+            request.plate_height,
             request.bypass_cache,
             request.generate_3mf,
             request.generate_stl
@@ -419,6 +423,7 @@ async def rerun_job(
         s = {}
     plate_width = s.get("plate_width", job.plate_width or 220)
     plate_depth = s.get("plate_depth", job.plate_depth or 220)
+    plate_height = s.get("plate_height", job.plate_height or 250)
     bypass_cache = s.get("bypass_cache", False)
     generate_3mf = s.get("generate_3mf", True)
     generate_stl = s.get("generate_stl", True)
@@ -431,6 +436,7 @@ async def rerun_job(
         progress=0,
         plate_width=plate_width,
         plate_depth=plate_depth,
+        plate_height=plate_height,
         brickgen_version=__version__,
         project_id=job.project_id,
         settings=job.settings
@@ -445,6 +451,7 @@ async def rerun_job(
         job.set_num,
         plate_width,
         plate_depth,
+        plate_height,
         bypass_cache,
         generate_3mf,
         generate_stl

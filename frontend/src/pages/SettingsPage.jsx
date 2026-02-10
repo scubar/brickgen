@@ -236,8 +236,8 @@ function SettingsPage() {
 
   const tabs = [
     { id: 'general', label: 'General' },
-    { id: 'parts', label: 'Part Placement/Scaling' },
-    { id: 'ldview', label: 'LDView Config' },
+    { id: 'parts', label: 'Part' },
+    { id: 'ldview', label: 'LDView' },
     { id: 'cache', label: 'Cache' },
     { id: 'database', label: 'Database' },
   ]
@@ -487,7 +487,7 @@ function SettingsPage() {
                 <div className="pt-6 border-t border-dk-3">
                   <h2 className="text-xl font-bold mb-4 text-dk-5">STL Scaling</h2>
                   <input type="text" inputMode="decimal" value={scaleInputStr} onChange={(e) => setScaleInputStr(e.target.value)} placeholder="1" className="w-full max-w-xs px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
-                  <p className="text-sm text-dk-5/80 mt-1">1.0 = normal (10 mm per LDraw unit). Valid: 0.01–10.</p>
+                  <p className="text-sm text-dk-5/80 mt-1">Valid: 0.01–10. Default: 1.0</p>
                 </div>
 
                 <button type="submit" disabled={saving} className="w-full px-6 py-3 bg-mint text-dk-1 rounded-lg hover:opacity-90 disabled:opacity-50 font-semibold">

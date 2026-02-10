@@ -8,26 +8,27 @@ class TestCacheFilename:
     """Tests for _cache_filename (omit 0/false for shorter names)."""
 
     def test_part_only_scale_zero(self):
-        assert _cache_filename("3404", 0, False, 0, 0, 0) == "3404"
+        assert _cache_filename("3404", 0, False, 0, 0, 0, "") == "3404"
 
     def test_part_and_scale(self):
-        assert _cache_filename("3404", 10, False, 0, 0, 0) == "3404_scale10"
+        assert _cache_filename("3404", 10, False, 0, 0, 0, "abc123") == "3404_scale10_qabc123"
 
     def test_rotation_enabled_zero_angles(self):
-        assert _cache_filename("3404", 10, True, 0, 0, 0) == "3404_scale10_rotation1"
+        assert _cache_filename("3404", 10, True, 0, 0, 0, "abc123") == "3404_scale10_rotation1_qabc123"
 
     def test_rotation_enabled_with_x(self):
-        assert _cache_filename("3404", 10, True, 233, 0, 0) == "3404_scale10_rotation1_rotationX233"
+        assert _cache_filename("3404", 10, True, 233, 0, 0, "abc123") == "3404_scale10_rotation1_rotationX233_qabc123"
 
     def test_rotation_enabled_x_y_z(self):
-        s = _cache_filename("3404", 10, True, 233, 45, 90)
-        assert s == "3404_scale10_rotation1_rotationX233_rotationY45_rotationZ90"
+        s = _cache_filename("3404", 10, True, 233, 45, 90, "abc123")
+        assert s == "3404_scale10_rotation1_rotationX233_rotationY45_rotationZ90_qabc123"
 
     def test_omit_zero_angles(self):
-        s = _cache_filename("3005", 10, True, -90, 0, 0)
+        s = _cache_filename("3005", 10, True, -90, 0, 0, "abc123")
         assert "rotationX-90" in s
         assert "rotationY" not in s
         assert "rotationZ" not in s
+        assert "qabc123" in s
 
 
 class TestSTLConverterRotationSuffix:

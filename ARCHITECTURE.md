@@ -4,7 +4,7 @@ This document describes the architecture and design decisions for BrickGen.
 
 ## System Overview
 
-BrickGen is a full-stack web application that converts LEGO sets into 3D-printable files.
+BrickGen is a full-stack web application that converts Rebrickable sets into 3D-printable files.
 
 ```
 ┌─────────────┐

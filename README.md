@@ -1,10 +1,10 @@
-# BrickGen - LEGO 3D Printing Generator
+# BrickGen - Rebrickable > LDraw > LDview > STL/3mf (3D Printing) Generator
 
-BrickGen is a self-hosted web application that generates print-ready STL files for LEGO sets. Search for any set via Rebrickable, and it automatically fetches the parts list with LDraw IDs, converts each brick to STL format using the official LDView tool, and generates a ZIP file with all individual STL files ready for your slicer.
+BrickGen is a self-hosted web application that generates print-ready STL files for sets from Rebrickable. Search for any set via Rebrickable, and it automatically fetches the parts list with LDraw IDs, converts each brick to STL format using the official LDView tool, and generates a ZIP file with all individual STL files ready for your slicer.
 
 ## Features
 
-- **Set Search**: Search LEGO sets by name or number using the Rebrickable API
+- **Set Search**: Search sets by name or number using the Rebrickable API
 - **Automatic Part Conversion**: Converts LDraw .dat files to STL using official LDView tool
 - **ZIP Download**: All individual STL files packaged for easy import to any slicer
 - **Part Numbering**: Duplicate parts numbered (3007_1.stl, 3007_2.stl, etc.)
@@ -18,7 +18,7 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 - Python 3.13+ with FastAPI
 - SQLite for caching and job tracking
 - LDView CLI tool for LDraw → STL conversion
-- LDraw parts library (10,000+ LEGO parts)
+- LDraw parts library (10,000+ parts)
 - Key dependencies: `fastapi`, `uvicorn`, `aiohttp`, `sqlalchemy`, `pydantic`, `numpy`, `numpy-stl`
 
 **Frontend:**
@@ -71,7 +71,7 @@ docker-compose logs -f brickgen
 
 ## Usage
 
-1. **Search for a LEGO set** by name or number
+1. **Search for a set** by name or number
 2. **Select a set** from the search results
 3. **Configure build plate dimensions** (defaults to 220x220mm)
 4. **Click "Generate 3MF File"** and wait for processing
@@ -181,7 +181,7 @@ brickgen/
 
 ## API Endpoints
 
-- `GET /api/search?query={name}` - Search LEGO sets
+- `GET /api/search?query={name}` - Search Rebrickable sets
 - `GET /api/sets/{set_num}` - Get set details
 - `POST /api/generate` - Generate 3MF/STL (legacy)
 - `GET /api/projects` - List projects
@@ -232,6 +232,8 @@ Not all LDraw parts may convert successfully. The application will:
 
 - Quick import of users saved MOCs, Sets and Parts from Rebrickable.
 
+- Support Brickset API.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
@@ -242,9 +244,9 @@ MIT License - see LICENSE file for details
 
 ## Acknowledgments
 
-- [LDraw](https://www.ldraw.org/) - LEGO CAD parts library
+- [LDraw](https://www.ldraw.org/) - CAD parts library
 - [LDView](https://github.com/tcobbs/ldview) - LDraw viewer and STL export (included under its MIT license option)
-- [Rebrickable](https://rebrickable.com/) - LEGO set search and parts inventory
+- [Rebrickable](https://rebrickable.com/) - Set search and parts inventory
 - [3MF specification](https://3mf.io/specification/) - 3MF file format (BrickGen generates 3MF in-house; no lib3mf dependency)
 
 For the full list of third-party software and licenses, see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).

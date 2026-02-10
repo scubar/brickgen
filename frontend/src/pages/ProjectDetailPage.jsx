@@ -77,54 +77,59 @@ function ProjectDetailPage() {
     setColorRefPage(1)
   }, [project?.set_num])
 
-  // Poll in-memory progress (no DB) while job is running; fall back to full job endpoint when not in progress
   const activeJobIdRef = useRef(null)
   activeJobIdRef.current = activeJobId
   useEffect(() => {
     if (!activeJobId) return
-    const interval = setInterval(async () => {
-      const currentId = activeJobIdRef.current
-      if (!currentId) return
-      try {
-        const progressRes = await fetch(`/api/jobs/${currentId}/progress`)
-        if (progressRes.ok) {
-          const p = await progressRes.json()
-          setJobs(prev => {
-            const idx = prev.findIndex(job => job.job_id === currentId)
-            const updated = { status: p.status, progress: p.progress, error_message: p.error_message ?? null, log: p.log ?? null }
-            if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
-            return [{ job_id: currentId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
-          })
-          if (p.status === 'completed' || p.status === 'failed') {
-            const fullRes = await fetch(`/api/jobs/${currentId}`)
-            if (fullRes.ok) {
-              const j = await fullRes.json()
-              setJobs(prev => prev.map(job => job.job_id === currentId ? { ...job, ...j, job_id: j.job_id ?? currentId } : job))
-            }
-            setActiveJobId(null)
-            await fetchJobs()
-          }
-          return
-        }
-        if (progressRes.status === 404) {
-          const fullRes = await fetch(`/api/jobs/${currentId}`)
-          if (!fullRes.ok) return
-          const j = await fullRes.json()
-          const jobId = j.job_id ?? currentId
+    const jobId = activeJobId
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/api/jobs/${encodeURIComponent(jobId)}/ws`
+    let ws = null
+    try {
+      ws = new WebSocket(wsUrl)
+      ws.onmessage = (event) => {
+        try {
+          const p = JSON.parse(event.data)
           setJobs(prev => {
             const idx = prev.findIndex(job => job.job_id === jobId)
-            const updated = { status: j.status, progress: j.progress, error_message: j.error_message, output_file: j.output_file, log: j.log }
+            const updated = { status: p.status, progress: p.progress, error_message: p.error_message ?? null, log: p.log ?? null }
             if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
-            return [{ job_id: jobId, set_num: j.set_num ?? '', ...updated, brickgen_version: j.brickgen_version ?? null, created_at: j.created_at ?? '', updated_at: j.updated_at ?? '' }, ...prev]
+            return [{ job_id: jobId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
           })
-          if (j.status === 'completed' || j.status === 'failed') setActiveJobId(null)
-          await fetchJobs()
+          if (p.status === 'completed' || p.status === 'failed') {
+            setActiveJobId(null)
+            ws?.close()
+            fetch(`/api/jobs/${jobId}`)
+              .then((r) => r.ok ? r.json() : null)
+              .then((j) => {
+                if (j) setJobs(prev => prev.map(job => job.job_id === jobId ? { ...job, ...j, job_id: j.job_id ?? jobId } : job))
+              })
+              .finally(fetchJobs)
+          }
+        } catch (e) {
+          console.error(e)
         }
-      } catch (e) {
-        console.error(e)
       }
-    }, 500)
-    return () => clearInterval(interval)
+      ws.onclose = () => {
+        if (activeJobIdRef.current === jobId) {
+          setActiveJobId(null)
+          fetchJobs()
+        }
+      }
+      ws.onerror = () => {
+        if (activeJobIdRef.current === jobId) {
+          setActiveJobId(null)
+          fetchJobs()
+        }
+      }
+    } catch (e) {
+      console.error(e)
+      setActiveJobId(null)
+      fetchJobs()
+    }
+    return () => {
+      if (ws && ws.readyState !== WebSocket.CLOSED) ws.close()
+    }
   }, [activeJobId, projectId])
 
   const fetchVersion = async () => {

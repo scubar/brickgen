@@ -1,12 +1,13 @@
 """Generation routes for creating 3MF files."""
 import asyncio
 import logging
+import queue
 import threading
 import uuid
 import zipfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from backend.models.schemas import GenerateRequest, JobProgress, JobStatus
 from backend.api.integrations.rebrickable import RebrickableClient
@@ -27,6 +28,10 @@ router = APIRouter()
 # In-memory job progress (single-process). Key: job_id. Value: status, progress, error_message, log.
 # Multi-worker deployments would not share this store.
 _job_progress: Dict[str, Dict[str, Any]] = {}
+
+# WebSocket: job_id -> list of connected WebSockets. Progress updates are pushed via _progress_queue.
+_ws_subscribers: Dict[str, List[Any]] = {}
+_progress_queue: queue.Queue = queue.Queue()
 
 
 def get_job_progress_overlay(job_id: str) -> Optional[Dict[str, Any]]:
@@ -52,7 +57,7 @@ def _last_log_line(full_log: Optional[str]) -> Optional[str]:
 
 def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Optional[int] = None,
                       error_message: Optional[str] = None, log: Optional[str] = None) -> None:
-    """Update in-memory progress (no DB commit)."""
+    """Update in-memory progress (no DB commit). Also enqueues payload for WebSocket broadcast."""
     if job_id not in _job_progress:
         _job_progress[job_id] = {
             "status": "processing",
@@ -69,11 +74,40 @@ def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Op
         entry["error_message"] = error_message
     if log is not None:
         entry["log"] = log
+    payload = {
+        "status": entry["status"],
+        "progress": entry["progress"],
+        "error_message": entry.get("error_message"),
+        "log": _last_log_line(entry.get("log")),
+    }
+    try:
+        _progress_queue.put_nowait((job_id, payload))
+    except queue.Full:
+        pass
 
 
 def _remove_job_progress(job_id: str) -> None:
     """Remove job from in-memory store (call when job completes or fails)."""
     _job_progress.pop(job_id, None)
+
+
+async def broadcast_progress_task() -> None:
+    """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
+    while True:
+        try:
+            job_id, payload = _progress_queue.get_nowait()
+        except queue.Empty:
+            await asyncio.sleep(0.05)
+            continue
+        for ws in list(_ws_subscribers.get(job_id, [])):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                try:
+                    _ws_subscribers[job_id].remove(ws)
+                except (KeyError, ValueError):
+                    pass
+        await asyncio.sleep(0)
 
 
 def _start_generation_thread(
@@ -391,6 +425,8 @@ async def process_generation(
             job.output_file = output_filename
             job.log = log_str
             db.commit()
+        # Push final state to WebSocket clients before removing overlay (so UI updates without refresh)
+        _set_job_progress(job_id, status="completed", progress=100, log=log_str)
         _remove_job_progress(job_id)
         
         logger.info(f"Job {job_id}: Completed successfully with {output_filename}")
@@ -488,6 +524,39 @@ async def get_job_progress(job_id: str):
         error_message=overlay.get("error_message"),
         log=_last_log_line(overlay.get("log")),
     )
+
+
+@router.websocket("/jobs/{job_id}/ws")
+async def websocket_job_progress(websocket: WebSocket, job_id: str):
+    """Stream job progress over WebSocket. Server pushes updates when progress changes. No DB access."""
+    await websocket.accept()
+    if job_id not in _ws_subscribers:
+        _ws_subscribers[job_id] = []
+    _ws_subscribers[job_id].append(websocket)
+    overlay = get_job_progress_overlay(job_id)
+    if overlay:
+        try:
+            await websocket.send_json({
+                "status": overlay["status"],
+                "progress": overlay["progress"],
+                "error_message": overlay.get("error_message"),
+                "log": _last_log_line(overlay.get("log")),
+            })
+        except Exception:
+            pass
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if job_id in _ws_subscribers:
+            try:
+                _ws_subscribers[job_id].remove(websocket)
+            except ValueError:
+                pass
+            if not _ws_subscribers[job_id]:
+                del _ws_subscribers[job_id]
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatus)

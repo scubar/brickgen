@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+import asyncio
 import logging
 from pathlib import Path
 from fastapi import FastAPI, Request
@@ -45,6 +46,10 @@ app.include_router(settings_routes.router, prefix=settings.api_prefix, tags=["se
 app.include_router(projects.router, prefix=settings.api_prefix, tags=["projects"])
 app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"])
 
+@app.on_event("startup")
+async def startup_event():
+    """Start the WebSocket progress broadcast task (drains queue from worker thread)."""
+    asyncio.create_task(generate.broadcast_progress_task())
 
 @app.get(f"{settings.api_prefix}/version")
 async def get_version():

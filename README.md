@@ -134,6 +134,16 @@ uvicorn backend.main:app --reload
 pipenv run --path backend python -m pytest backend/tests -v --tb=short
 ```
 
+**Database migrations:** The app uses [Alembic](https://alembic.sqlalchemy.org/). Migrations run automatically on startup (`alembic upgrade head`). To run or inspect migrations manually (from project root, with the same `DATABASE_PATH` or `.env` in use):
+```bash
+cd backend && pipenv run env PYTHONPATH=/path/to/brickgen bash -c 'cd /path/to/brickgen && alembic upgrade head'
+```
+If you have an **existing** database that was created before migrations were added (e.g. with the old `create_all` + inline ALTERs), run once to mark it as up to date without re-running migrations:
+```bash
+alembic stamp head
+```
+Then future startups will run `upgrade head` as a no-op. You can view applied migrations and table row counts in **Settings → Database** in the UI.
+
 **Frontend:**
 ```bash
 cd frontend

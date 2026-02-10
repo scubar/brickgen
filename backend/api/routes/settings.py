@@ -1,15 +1,26 @@
 """Settings routes."""
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
-from backend.models.schemas import SettingsResponse, SettingsUpdate, CacheStats, LDrawCacheStats
+from backend.models.schemas import (
+    SettingsResponse,
+    SettingsUpdate,
+    CacheStats,
+    LDrawCacheStats,
+    DatabaseInfo,
+    MigrationInfo,
+)
 from backend.config import settings
 from backend.core.stl_processing import STLConverter
 from backend.api.integrations.ldraw import LDrawManager
-from backend.database import get_db, CachedSet, CachedParts
+from backend.database import get_db, CachedSet, CachedParts, engine
+from backend.database import Project, Job, SearchHistory
+from backend.database import STLCache, AppSettings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,101 +31,129 @@ class ApiKeyUpdate(BaseModel):
     api_key: str
 
 
+def _row_to_response(row: AppSettings) -> SettingsResponse:
+    """Build SettingsResponse from AppSettings row."""
+    return SettingsResponse(
+        default_plate_width=row.default_plate_width or 220,
+        default_plate_depth=row.default_plate_depth or 220,
+        default_plate_height=row.default_plate_height or 250,
+        part_spacing=row.part_spacing or 2,
+        stl_scale_factor=float(row.stl_scale_factor if row.stl_scale_factor is not None else 1.0),
+        rotation_enabled=bool(row.rotation_enabled),
+        rotation_x=float(row.rotation_x if row.rotation_x is not None else 0.0),
+        rotation_y=float(row.rotation_y if row.rotation_y is not None else 0.0),
+        rotation_z=float(row.rotation_z if row.rotation_z is not None else 0.0),
+        default_orientation_match_preview=bool(row.default_orientation_match_preview if row.default_orientation_match_preview is not None else True),
+        auto_generate_part_previews=bool(row.auto_generate_part_previews if row.auto_generate_part_previews is not None else True),
+    )
+
+
+def _sync_config_from_row(row: AppSettings) -> None:
+    """Update in-memory config from DB row so the rest of the app uses current values."""
+    settings.default_plate_width = row.default_plate_width or 220
+    settings.default_plate_depth = row.default_plate_depth or 220
+    settings.default_plate_height = row.default_plate_height or 250
+    settings.part_spacing = row.part_spacing or 2
+    settings.stl_scale_factor = float(row.stl_scale_factor if row.stl_scale_factor is not None else 1.0)
+    settings.rotation_enabled = bool(row.rotation_enabled)
+    settings.rotation_x = float(row.rotation_x if row.rotation_x is not None else 0.0)
+    settings.rotation_y = float(row.rotation_y if row.rotation_y is not None else 0.0)
+    settings.rotation_z = float(row.rotation_z if row.rotation_z is not None else 0.0)
+    settings.default_orientation_match_preview = bool(row.default_orientation_match_preview if row.default_orientation_match_preview is not None else True)
+    settings.auto_generate_part_previews = bool(row.auto_generate_part_previews if row.auto_generate_part_previews is not None else True)
+
+
 @router.get("/settings", response_model=SettingsResponse)
-async def get_settings():
-    """Get current application settings."""
+async def get_settings(db: Session = Depends(get_db)):
+    """Get current application settings from the database (falls back to config defaults if no row).
+    When a row exists, in-memory config is synced so the rest of the app uses persisted values."""
+    row = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    if row is not None:
+        _sync_config_from_row(row)
+        return _row_to_response(row)
     return SettingsResponse(
         default_plate_width=settings.default_plate_width,
         default_plate_depth=settings.default_plate_depth,
         default_plate_height=settings.default_plate_height,
         part_spacing=settings.part_spacing,
-        stl_scale_factor=settings.stl_scale_factor,
+        stl_scale_factor=float(settings.stl_scale_factor),
         rotation_enabled=settings.rotation_enabled,
-        rotation_x=settings.rotation_x,
-        rotation_y=settings.rotation_y,
-        rotation_z=settings.rotation_z,
+        rotation_x=float(settings.rotation_x),
+        rotation_y=float(settings.rotation_y),
+        rotation_z=float(settings.rotation_z),
         default_orientation_match_preview=settings.default_orientation_match_preview,
-        auto_generate_part_previews=settings.auto_generate_part_previews
+        auto_generate_part_previews=settings.auto_generate_part_previews,
     )
 
 
 @router.post("/settings")
 async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db)):
-    """Update application settings.
+    """Update application settings. Persists to database and syncs in-memory config.
 
-    Note: This updates runtime settings only, not persisted.
-    For production, consider using a database or config file.
-
-    If stl_scale_factor is changed, STL cache is automatically cleared (files + DB).
+    If rotation or default_orientation_match_preview is changed, STL cache is cleared (files + DB).
     """
     cache_cleared = False
     converter = STLConverter()
 
-    # Check if STL scale is being changed
-    if update.stl_scale_factor is not None and update.stl_scale_factor != settings.stl_scale_factor:
-        logger.info(f"STL scale changed from {settings.stl_scale_factor} to {update.stl_scale_factor}, clearing STL cache")
-        settings.stl_scale_factor = update.stl_scale_factor
-        try:
-            deleted_count = converter.clear_cache(db=db)
-            cache_cleared = True
-            logger.info(f"Cleared {deleted_count} STL files due to scale change")
-        except Exception as e:
-            logger.error(f"Failed to clear cache after scale change: {e}")
+    # Load current from DB (or create default row if missing)
+    row = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    if row is None:
+        row = AppSettings(id=1)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
 
+    # Capture previous values for cache-clear logic (use current in-memory or row)
+    prev_rotation = getattr(row, "rotation_enabled", False)
+    prev_orientation = getattr(row, "default_orientation_match_preview", True)
+
+    # Apply updates to row (persist to DB)
     if update.default_plate_width is not None:
-        settings.default_plate_width = update.default_plate_width
-
+        row.default_plate_width = update.default_plate_width
     if update.default_plate_depth is not None:
-        settings.default_plate_depth = update.default_plate_depth
-
+        row.default_plate_depth = update.default_plate_depth
     if update.default_plate_height is not None:
-        settings.default_plate_height = update.default_plate_height
-
+        row.default_plate_height = update.default_plate_height
     if update.part_spacing is not None:
-        settings.part_spacing = update.part_spacing
-
+        row.part_spacing = update.part_spacing
+    if update.stl_scale_factor is not None:
+        row.stl_scale_factor = float(update.stl_scale_factor)
     if update.rotation_enabled is not None:
-        if update.rotation_enabled != settings.rotation_enabled:
+        if update.rotation_enabled != prev_rotation:
             try:
                 deleted_count = converter.clear_cache(db=db)
                 cache_cleared = True
                 logger.info(f"Cleared {deleted_count} STL files due to rotation change")
             except Exception as e:
                 logger.error(f"Failed to clear cache after rotation change: {e}")
-        settings.rotation_enabled = update.rotation_enabled
+        row.rotation_enabled = update.rotation_enabled
     if update.rotation_x is not None:
-        settings.rotation_x = update.rotation_x
+        row.rotation_x = update.rotation_x
     if update.rotation_y is not None:
-        settings.rotation_y = update.rotation_y
+        row.rotation_y = update.rotation_y
     if update.rotation_z is not None:
-        settings.rotation_z = update.rotation_z
+        row.rotation_z = update.rotation_z
     if update.default_orientation_match_preview is not None:
-        if update.default_orientation_match_preview != settings.default_orientation_match_preview:
+        if update.default_orientation_match_preview != prev_orientation:
             try:
                 deleted_count = converter.clear_cache(db=db)
                 cache_cleared = True
                 logger.info(f"Cleared {deleted_count} STL files due to default orientation change")
             except Exception as e:
                 logger.error(f"Failed to clear cache after default orientation change: {e}")
-        settings.default_orientation_match_preview = update.default_orientation_match_preview
+        row.default_orientation_match_preview = update.default_orientation_match_preview
     if update.auto_generate_part_previews is not None:
-        settings.auto_generate_part_previews = update.auto_generate_part_previews
+        row.auto_generate_part_previews = update.auto_generate_part_previews
+
+    db.commit()
+    db.refresh(row)
+
+    # Sync in-memory config so the rest of the app uses new values immediately
+    _sync_config_from_row(row)
 
     return {
-        "settings": SettingsResponse(
-            default_plate_width=settings.default_plate_width,
-            default_plate_depth=settings.default_plate_depth,
-            default_plate_height=settings.default_plate_height,
-            part_spacing=settings.part_spacing,
-            stl_scale_factor=settings.stl_scale_factor,
-            rotation_enabled=settings.rotation_enabled,
-            rotation_x=settings.rotation_x,
-            rotation_y=settings.rotation_y,
-            rotation_z=settings.rotation_z,
-            default_orientation_match_preview=settings.default_orientation_match_preview,
-            auto_generate_part_previews=settings.auto_generate_part_previews
-        ),
-        "cache_cleared": cache_cleared
+        "settings": _row_to_response(row),
+        "cache_cleared": cache_cleared,
     }
 
 
@@ -320,3 +359,77 @@ async def update_api_key(update: ApiKeyUpdate):
     except Exception as e:
         logger.error(f"Error updating API key: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _get_applied_revision_ids(script_dir, current_id: Optional[str]) -> set:
+    """Return set of revision ids that are applied (from base to current)."""
+    if not current_id:
+        return set()
+    applied = set()
+    rev = script_dir.get_revision(current_id)
+    while rev:
+        applied.add(rev.revision)
+        down = rev.down_revision
+        rev = script_dir.get_revision(down) if down else None
+        if down and isinstance(down, (list, tuple)):
+            rev = script_dir.get_revision(down[0]) if down else None
+    return applied
+
+
+@router.get("/settings/database", response_model=DatabaseInfo)
+async def get_database_info(db: Session = Depends(get_db)):
+    """Return database path, applied migrations, and row counts per table."""
+    from alembic.script import ScriptDirectory
+
+    database_path = str(settings.database_path)
+    table_counts = {}
+    tables = [
+        ("projects", Project),
+        ("cached_sets", CachedSet),
+        ("cached_parts", CachedParts),
+        ("jobs", Job),
+        ("search_history", SearchHistory),
+        ("app_settings", AppSettings),
+        ("stl_cache", STLCache),
+    ]
+    for _name, model in tables:
+        try:
+            table_counts[model.__tablename__] = db.query(model).count()
+        except Exception:
+            table_counts[model.__tablename__] = 0
+
+    current_revision = None
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("SELECT version_num FROM alembic_version"))
+            row = r.fetchone()
+            if row:
+                current_revision = row[0]
+        except Exception:
+            pass
+
+    # __file__ is backend/api/routes/settings.py -> backend is parent.parent.parent, project root is parent.parent.parent.parent
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    script_location = project_root / "alembic"
+    script_dir = ScriptDirectory(str(script_location))
+    applied_ids = _get_applied_revision_ids(script_dir, current_revision)
+
+    migrations = []
+    for rev in script_dir.walk_revisions(base="base", head="head"):
+        doc = (rev.doc or "").strip() or rev.revision
+        migrations.append(
+            MigrationInfo(
+                revision_id=rev.revision,
+                description=doc.split("\n")[0] if doc else rev.revision,
+                applied=rev.revision in applied_ids,
+            )
+        )
+    # Order so applied (oldest first) then pending
+    migrations.reverse()
+
+    return DatabaseInfo(
+        database_path=database_path,
+        current_revision=current_revision,
+        migrations=migrations,
+        table_counts=table_counts,
+    )

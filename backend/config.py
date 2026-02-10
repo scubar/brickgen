@@ -17,9 +17,14 @@ class Settings(BaseSettings):
     default_plate_height: int = 250
     part_spacing: int = 2
     
-    # STL Scale Factor: LDView exports STL in centimeters; multiply by 10 to get mm.
-    # Calibration baseline: part 3034 (Plate 2x8) = 16×64×3.2 mm, part 3404 (Brick 2x4) = 16×32×9.6 mm.
-    stl_scale_factor: float = 10.0
+    # STL Scale Factor (user-facing): 1.0 = normal (10 mm per LDraw unit). Backend multiplies by 10 for LDView.
+    # LDView exports in cm; backend uses stl_scale_factor * 10 so 1.0 → 10 (mm). Calibration: 3034, 3404.
+    stl_scale_factor: float = 1.0
+
+    @property
+    def stl_scale_factor_backend(self) -> float:
+        """Scale value for LDView/STL (user value * 10)."""
+        return self.stl_scale_factor * 10.0
     
     # STL Rotation: absolute degrees (X, Y, Z) when enabled
     rotation_enabled: bool = False

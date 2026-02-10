@@ -107,10 +107,12 @@ async def process_generation(
             rot_enabled = settings.rotation_enabled
             rx, ry, rz = settings.rotation_x, settings.rotation_y, settings.rotation_z
 
-        # Step 3: Convert parts to STL using LDView
+        # Step 3: Convert parts to STL using LDView (user scale 1.0 → backend 10)
+        scale_factor = float(scale_factor)
+        scale_factor_backend = scale_factor * 10.0
         logger.info(f"Job {job_id}: Converting parts to STL with LDView")
         converter = STLConverter()
-        logger.info(f"Using scale factor {scale_factor}, rotation_enabled={rot_enabled} (X={rx}, Y={ry}, Z={rz}), per_part_rotation keys={len(per_part_rotation)}")
+        logger.info(f"Using scale factor {scale_factor} (backend {scale_factor_backend}), rotation_enabled={rot_enabled} (X={rx}, Y={ry}, Z={rz}), per_part_rotation keys={len(per_part_rotation)}")
 
         stl_files = []
         converted_count = 0
@@ -147,7 +149,7 @@ async def process_generation(
             stl_path = converter.get_or_convert_stl(
                 ldraw_id,
                 bypass_cache=bypass_cache,
-                scale_factor=scale_factor,
+                scale_factor=scale_factor_backend,
                 rotation_enabled=use_rot,
                 rotation_x=px, rotation_y=py, rotation_z=pz,
                 db=db,
@@ -283,7 +285,7 @@ async def generate_3mf(
             "generate_stl": request.generate_stl,
         }
         if request.scale_factor is not None:
-            settings_obj["scale_factor"] = request.scale_factor
+            settings_obj["scale_factor"] = float(request.scale_factor)
         settings_json = json.dumps(settings_obj)
 
         job = Job(

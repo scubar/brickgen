@@ -5,13 +5,19 @@ import CacheManagementContent from '../components/CacheManagementContent'
 function SettingsPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [activeTab, setActiveTab] = useState(() => (typeof window !== 'undefined' && window.location.pathname === '/settings/cache' ? 'cache' : 'general'))
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === 'undefined') return 'general'
+    const p = window.location.pathname
+    if (p === '/settings/cache') return 'cache'
+    if (p === '/settings/database') return 'database'
+    return 'general'
+  })
   const [settings, setSettings] = useState({
     default_plate_width: 220,
     default_plate_depth: 220,
     default_plate_height: 250,
     part_spacing: 2,
-    stl_scale_factor: 10,
+    stl_scale_factor: 1.0,
     rotation_enabled: false,
     rotation_x: 0,
     rotation_y: 0,
@@ -29,11 +35,32 @@ function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [savingApiKey, setSavingApiKey] = useState(false)
   const [message, setMessage] = useState(null)
+  const [databaseInfo, setDatabaseInfo] = useState(null)
+  const [databaseInfoLoading, setDatabaseInfoLoading] = useState(false)
+  const [scaleInputStr, setScaleInputStr] = useState('1')
   useEffect(() => {
     fetchSettings()
   }, [])
+  const fetchDatabaseInfo = async () => {
+    setDatabaseInfoLoading(true)
+    try {
+      const response = await fetch('/api/settings/database')
+      if (response.ok) {
+        const data = await response.json()
+        setDatabaseInfo(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch database info:', err)
+    } finally {
+      setDatabaseInfoLoading(false)
+    }
+  }
+  useEffect(() => {
+    if (activeTab === 'database') fetchDatabaseInfo()
+  }, [activeTab])
   useEffect(() => {
     if (location.pathname === '/settings/cache') setActiveTab('cache')
+    else if (location.pathname === '/settings/database') setActiveTab('database')
   }, [location.pathname])
 
   const fetchSettings = async () => {
@@ -41,7 +68,15 @@ function SettingsPage() {
       const response = await fetch('/api/settings')
       if (response.ok) {
         const data = await response.json()
-        setSettings(data)
+        const scale = parseFloat(data.stl_scale_factor) || 1.0
+        setSettings({
+          ...data,
+          stl_scale_factor: scale,
+          rotation_x: parseFloat(data.rotation_x) || 0,
+          rotation_y: parseFloat(data.rotation_y) || 0,
+          rotation_z: parseFloat(data.rotation_z) || 0,
+        })
+        setScaleInputStr(String(scale))
       }
     } catch (err) {
       console.error('Failed to fetch settings:', err)
@@ -52,18 +87,13 @@ function SettingsPage() {
 
   const handleSaveSettings = async (e) => {
     e.preventDefault()
-    
-    // Check if scale factor is being changed
-    const currentScale = settings.stl_scale_factor
-    const previousScale = (await fetch('/api/settings').then(r => r.json())).stl_scale_factor
-    const scaleChanged = currentScale !== previousScale
-    
-    if (scaleChanged) {
-      if (!confirm('⚠️ WARNING: Changing the scale factor will automatically clear all cached STL files. Are you sure?')) {
-        return
-      }
+
+    const scaleParsed = parseFloat(scaleInputStr)
+    if (Number.isNaN(scaleParsed) || scaleParsed < 0.01 || scaleParsed > 10) {
+      setMessage({ type: 'error', text: 'Scale must be a number between 0.01 and 10.' })
+      return
     }
-    
+
     setSaving(true)
     setMessage(null)
 
@@ -73,13 +103,23 @@ function SettingsPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({
+          ...settings,
+          stl_scale_factor: scaleParsed,
+          rotation_x: Number(settings.rotation_x) || 0,
+          rotation_y: Number(settings.rotation_y) || 0,
+          rotation_z: Number(settings.rotation_z) || 0,
+        }),
       })
 
       if (response.ok) {
         const data = await response.json()
+        const saved = data.settings || {}
+        const savedScale = parseFloat(saved.stl_scale_factor)
+        setScaleInputStr(Number.isNaN(savedScale) ? String(scaleParsed) : String(savedScale))
+        setSettings(prev => ({ ...prev, ...saved, stl_scale_factor: Number.isNaN(savedScale) ? scaleParsed : savedScale }))
         if (data.cache_cleared) {
-          setMessage({ type: 'success', text: 'Settings saved! STL cache was cleared due to scale or rotation change.' })
+          setMessage({ type: 'success', text: 'Settings saved! STL cache was cleared due to rotation change.' })
         } else {
           setMessage({ type: 'success', text: 'Settings saved successfully!' })
         }
@@ -132,8 +172,8 @@ function SettingsPage() {
     return Math.max(-360, Math.min(360, n))
   }
   const handleChange = (field, value) => {
-    if (['stl_scale_factor', 'rotation_x', 'rotation_y', 'rotation_z'].includes(field)) {
-      const val = field.startsWith('rotation_') ? clampRotation(value) : (parseFloat(value) || 0)
+    if (['rotation_x', 'rotation_y', 'rotation_z'].includes(field)) {
+      const val = clampRotation(value)
       setSettings(prev => ({ ...prev, [field]: val }))
     } else if (field === 'rotation_enabled' || field === 'auto_generate_part_previews' || field === 'default_orientation_match_preview') {
       setSettings(prev => ({ ...prev, [field]: value }))
@@ -150,12 +190,14 @@ function SettingsPage() {
     { id: 'general', label: 'General' },
     { id: 'parts', label: 'Part Placement and Scaling' },
     { id: 'cache', label: 'Cache Management' },
+    { id: 'database', label: 'Database' },
   ]
 
   const selectTab = (id) => {
     setActiveTab(id)
     setMessage(null)
     if (id === 'cache') navigate('/settings/cache')
+    else if (id === 'database') navigate('/settings/database')
     else navigate('/settings')
   }
 
@@ -313,8 +355,8 @@ function SettingsPage() {
 
                 <div className="pt-6 border-t border-dk-3">
                   <h2 className="text-xl font-bold mb-4 text-dk-5">STL Scaling</h2>
-                  <input type="number" step="0.01" value={settings.stl_scale_factor} onChange={(e) => handleChange('stl_scale_factor', e.target.value)} min={0.01} max={100} className="w-full max-w-xs px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
-                  <p className="text-sm text-dk-5/80 mt-1">Default: 10 (LDView cm to mm). Changing clears STL cache.</p>
+                  <input type="text" inputMode="decimal" value={scaleInputStr} onChange={(e) => setScaleInputStr(e.target.value)} placeholder="1" className="w-full max-w-xs px-4 py-2 border border-dk-3 rounded bg-dk-1 text-dk-5" />
+                  <p className="text-sm text-dk-5/80 mt-1">1.0 = normal (10 mm per LDraw unit). Valid: 0.01–10.</p>
                 </div>
 
                 <button type="submit" disabled={saving} className="w-full px-6 py-3 bg-mint text-dk-1 rounded-lg hover:opacity-90 disabled:opacity-50 font-semibold">
@@ -329,6 +371,83 @@ function SettingsPage() {
             <div>
               <p className="text-sm text-dk-5/80 mb-4">Manage STL, Rebrickable, part preview, LDraw, and search history caches.</p>
               <CacheManagementContent />
+            </div>
+          )}
+
+          {/* Database Tab */}
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold text-dk-5">Database</h2>
+              <p className="text-sm text-dk-5/80">View database path, applied migrations, and row counts.</p>
+              {databaseInfoLoading && <p className="text-dk-5/80">Loading…</p>}
+              {!databaseInfoLoading && databaseInfo && (
+                <>
+                  <div className="bg-dk-1 p-4 rounded">
+                    <p className="text-xs font-medium text-dk-5/80 uppercase">Database path</p>
+                    <p className="text-sm font-mono text-dk-5 break-all mt-1">{databaseInfo.database_path}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-dk-5 mb-2">Migrations</h3>
+                    {databaseInfo.migrations && databaseInfo.migrations.length > 0 ? (
+                      <div className="border border-dk-3 rounded overflow-hidden">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-dk-1 text-dk-5/80">
+                            <tr>
+                              <th className="px-4 py-2 font-medium">Revision</th>
+                              <th className="px-4 py-2 font-medium">Description</th>
+                              <th className="px-4 py-2 font-medium">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-dk-5">
+                            {databaseInfo.migrations.map((m) => (
+                              <tr key={m.revision_id} className="border-t border-dk-3">
+                                <td className="px-4 py-2 font-mono">{m.revision_id}</td>
+                                <td className="px-4 py-2">{m.description}</td>
+                                <td className="px-4 py-2">
+                                  {m.applied ? (
+                                    <span className="text-mint">Applied</span>
+                                  ) : (
+                                    <span className="text-dk-5/70">Pending</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-dk-5/80">No migrations found.</p>
+                    )}
+                    {databaseInfo.current_revision && (
+                      <p className="text-xs text-dk-5/70 mt-2">Current revision: <span className="font-mono">{databaseInfo.current_revision}</span></p>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-dk-5 mb-2">Table row counts</h3>
+                    <div className="border border-dk-3 rounded overflow-hidden">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-dk-1 text-dk-5/80">
+                          <tr>
+                            <th className="px-4 py-2 font-medium">Table</th>
+                            <th className="px-4 py-2 font-medium">Rows</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-dk-5">
+                          {databaseInfo.table_counts && Object.entries(databaseInfo.table_counts).map(([table, count]) => (
+                            <tr key={table} className="border-t border-dk-3">
+                              <td className="px-4 py-2 font-mono">{table}</td>
+                              <td className="px-4 py-2">{count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+              {!databaseInfoLoading && !databaseInfo && (
+                <p className="text-sm text-dk-5/80">Could not load database info.</p>
+              )}
             </div>
           )}
         </div>

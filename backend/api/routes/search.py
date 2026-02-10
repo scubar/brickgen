@@ -5,8 +5,9 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from backend.models.schemas import SetSearchResult, SetDetail
-from backend.api.integrations.rebrickable import RebrickableClient
-from backend.database import get_db, CachedSet, CachedParts, SearchHistory
+from backend.api.integrations.rebrickable import RebrickableClient, CACHE_KEY_SET, CACHE_KEY_SET_INDEX
+from backend.database import get_db, SearchHistory
+from backend.core.api_cache import DbApiCache
 from datetime import datetime
 import json
 
@@ -28,6 +29,27 @@ class SuggestItem(BaseModel):
     name: str
 
 
+def _query_looks_like_set_number(q: str) -> bool:
+    """True if q is non-empty, starts with a digit, and contains only digits and dashes."""
+    q = q.strip()
+    return bool(q) and q[0].isdigit() and all(c.isdigit() or c == "-" for c in q)
+
+
+def _update_set_index(cache: DbApiCache, set_num: str, name: str) -> None:
+    """Add or update set_num/name in the set index used for suggest."""
+    index = cache.get(CACHE_KEY_SET_INDEX) or []
+    index = [x for x in index if x.get("set_num") != set_num]
+    index.append({"set_num": set_num, "name": name or ""})
+    cache.set(CACHE_KEY_SET_INDEX, index)
+
+
+def _remove_set_from_index(cache: DbApiCache, set_num: str) -> None:
+    """Remove set_num from the set index."""
+    index = cache.get(CACHE_KEY_SET_INDEX) or []
+    index = [x for x in index if x.get("set_num") != set_num]
+    cache.set(CACHE_KEY_SET_INDEX, index)
+
+
 @router.get("/search", response_model=SearchResponse)
 async def search_sets(
     query: str = Query(..., min_length=1),
@@ -37,32 +59,49 @@ async def search_sets(
 ):
     """Search for LEGO sets by name or number. Returns paginated results."""
     try:
+        q = query.strip()
+        cache = DbApiCache(db)
+        # When query looks like a set number, try cache first to avoid API call
+        if _query_looks_like_set_number(q):
+            prefix = f"{CACHE_KEY_SET}{q}"
+            total = DbApiCache.count_by_prefix(db, prefix)
+            if total >= 1:
+                keys = DbApiCache.list_keys(db, prefix, limit=page_size, offset=(page - 1) * page_size)
+                results = []
+                for key in keys:
+                    val = cache.get(key)
+                    if val:
+                        results.append(SetSearchResult(
+                            set_num=val.get("set_num", ""),
+                            name=val.get("name", ""),
+                            year=val.get("year"),
+                            theme=val.get("theme"),
+                            subtheme=val.get("subtheme"),
+                            pieces=val.get("pieces"),
+                            image_url=val.get("image_url"),
+                        ))
+                next_page = page + 1 if page * page_size < total else None
+                previous_page = page - 1 if page > 1 else None
+                hist = SearchHistory(query=q.lower())
+                db.add(hist)
+                db.commit()
+                return SearchResponse(
+                    results=results,
+                    count=total,
+                    page=page,
+                    page_size=page_size,
+                    next=next_page,
+                    previous=previous_page,
+                )
+
         client = RebrickableClient()
         data = await client.search_sets(query, page, page_size)
         results = data["results"]
 
         for result in results:
-            existing = db.query(CachedSet).filter(CachedSet.set_num == result["set_num"]).first()
-            if existing:
-                existing.data = json.dumps(result)
-                existing.name = result.get("name", "")
-                existing.year = result.get("year")
-                existing.theme = result.get("theme")
-                existing.subtheme = result.get("subtheme")
-                existing.pieces = result.get("pieces")
-                existing.image_url = result.get("image_url")
-            else:
-                cached = CachedSet(
-                    set_num=result["set_num"],
-                    name=result.get("name", ""),
-                    year=result.get("year"),
-                    theme=result.get("theme"),
-                    subtheme=result.get("subtheme"),
-                    pieces=result.get("pieces"),
-                    image_url=result.get("image_url"),
-                    data=json.dumps(result)
-                )
-                db.add(cached)
+            set_num = result["set_num"]
+            cache.set(f"{CACHE_KEY_SET}{set_num}", result)
+            _update_set_index(cache, set_num, result.get("name", ""))
 
         # Record search history
         hist = SearchHistory(query=query.strip().lower())
@@ -94,16 +133,18 @@ async def search_suggest(
     q = q.strip().lower()
     out = []
     seen = set()
+    cache = DbApiCache(db)
 
-    # From CachedSet: name or set_num contains q
-    cached = db.query(CachedSet).filter(
-        (CachedSet.name.ilike(f"%{q}%")) | (CachedSet.set_num.ilike(f"%{q}%"))
-    ).limit(limit).all()
-    for r in cached:
-        key = (r.set_num, r.name or "")
-        if key not in seen:
-            seen.add(key)
-            out.append(SuggestItem(set_num=r.set_num, name=r.name or ""))
+    # From set index: name or set_num contains q
+    index = cache.get(CACHE_KEY_SET_INDEX) or []
+    for entry in index:
+        set_num = entry.get("set_num", "")
+        name = (entry.get("name") or "").lower()
+        if q in name or q in set_num.lower():
+            key = (set_num, entry.get("name") or "")
+            if key not in seen:
+                seen.add(key)
+                out.append(SuggestItem(set_num=set_num, name=entry.get("name") or ""))
 
     # From search history: queries that start with or contain q
     hist = db.query(SearchHistory.query).filter(
@@ -111,13 +152,16 @@ async def search_suggest(
     ).distinct().limit(limit).all()
     for (h,) in hist:
         if h and (h, h) not in seen and len(out) < limit:
-            # May not have set_num; only add if we have a CachedSet match for this query
-            c = db.query(CachedSet).filter(
-                (CachedSet.name.ilike(f"%{h}%")) | (CachedSet.set_num.ilike(f"%{h}%"))
-            ).first()
-            if c and ((c.set_num, c.name or "") not in seen):
-                seen.add((c.set_num, c.name or ""))
-                out.append(SuggestItem(set_num=c.set_num, name=c.name or ""))
+            # Only add if we have a cached set matching this query
+            for entry in index:
+                set_num = entry.get("set_num", "")
+                name = (entry.get("name") or "").lower()
+                if h in name or h in set_num.lower():
+                    key = (set_num, entry.get("name") or "")
+                    if key not in seen:
+                        seen.add(key)
+                        out.append(SuggestItem(set_num=set_num, name=entry.get("name") or ""))
+                    break
 
     return out[:limit]
 
@@ -167,53 +211,53 @@ async def get_set_detail(
 ):
     """Get detailed information about a specific set."""
     try:
-        # Check cache first
-        cached = db.query(CachedSet).filter(CachedSet.set_num == set_num).first()
-        
+        cache = DbApiCache(db)
+        # Normalize set_num for cache key (version suffix)
+        lookup_num = set_num if "-" in set_num else f"{set_num}-1"
+        cached = cache.get(f"{CACHE_KEY_SET}{set_num}") or cache.get(f"{CACHE_KEY_SET}{lookup_num}")
+
         if cached:
-            data = json.loads(cached.data)
-            # Get parts count from Rebrickable if available
-            rebrickable = RebrickableClient()
+            # Parts count: use cache-backed client so we don't hit API if parts were already fetched
+            rebrickable = RebrickableClient(cache=cache)
             try:
                 parts = await rebrickable.get_set_parts(set_num)
                 parts_count = len(parts)
-            except:
-                parts_count = cached.pieces
-            
-            cached_at = cached.updated_at.isoformat() if cached.updated_at else None
-            return SetDetail(**data, parts_count=parts_count, cached_at=cached_at)
-        
-        # Fetch from Rebrickable
-        rebrickable_client = RebrickableClient()
+            except Exception:
+                parts_count = cached.get("pieces")
+            cached_at = cached.get("cached_at")
+            return SetDetail(
+                set_num=cached.get("set_num", ""),
+                name=cached.get("name", ""),
+                year=cached.get("year"),
+                theme=cached.get("theme"),
+                subtheme=cached.get("subtheme"),
+                pieces=cached.get("pieces"),
+                image_url=cached.get("image_url"),
+                parts_count=parts_count,
+                cached_at=cached_at,
+            )
+
+        # Fetch from Rebrickable (with cache to avoid repeat calls)
+        rebrickable_client = RebrickableClient(cache=cache)
         data = await rebrickable_client.search_sets(set_num, page=1, page_size=1)
         search_results = data.get("results", [])
         if not search_results:
             raise HTTPException(status_code=404, detail="Set not found")
         result = search_results[0]
-        
-        # Get parts count from Rebrickable (use same client)
+
         try:
             parts = await rebrickable_client.get_set_parts(set_num)
             parts_count = len(parts)
-        except:
-            parts_count = result.get('pieces')
-        
-        # Cache the result
-        cached = CachedSet(
-            set_num=result['set_num'],
-            name=result.get('name', ''),
-            year=result.get('year'),
-            theme=result.get('theme'),
-            subtheme=result.get('subtheme'),
-            pieces=result.get('pieces'),
-            image_url=result.get('image_url'),
-            data=json.dumps(result)
-        )
-        db.add(cached)
-        db.commit()
-        
-        return SetDetail(**result, parts_count=parts_count)
-        
+        except Exception:
+            parts_count = result.get("pieces")
+
+        # Cache the result (include cached_at for response)
+        result["cached_at"] = datetime.utcnow().isoformat()
+        cache.set(f"{CACHE_KEY_SET}{result['set_num']}", result)
+        _update_set_index(cache, result["set_num"], result.get("name", ""))
+
+        return SetDetail(**{k: v for k, v in result.items() if k != "cached_at"}, parts_count=parts_count, cached_at=result["cached_at"])
+
     except HTTPException:
         raise
     except Exception as e:
@@ -237,34 +281,10 @@ async def get_set_parts(set_num: str, db: Session = Depends(get_db)) -> List[Dic
         if "-" not in set_num:
             set_num = f"{set_num}-1"
         
-        # Check cache first
-        cached_parts = db.query(CachedParts).filter(
-            CachedParts.set_num == set_num
-        ).first()
-        
-        if cached_parts:
-            logger.info(f"Using cached parts for set {set_num}")
-            return json.loads(cached_parts.parts_data)
-        
-        # Fetch from Rebrickable
-        logger.info(f"Fetching parts for set {set_num} from Rebrickable")
-        client = RebrickableClient()
+        cache = DbApiCache(db)
+        client = RebrickableClient(cache=cache)
         parts = await client.get_set_parts(set_num)
-        
-        # Filter out spare parts
-        parts = [p for p in parts if not p.get('is_spare', False)]
-        
-        # Cache the result
-        cached_entry = CachedParts(
-            set_num=set_num,
-            parts_data=json.dumps(parts),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        db.add(cached_entry)
-        db.commit()
-        
-        logger.info(f"Cached {len(parts)} parts for set {set_num}")
+        parts = [p for p in parts if not p.get("is_spare", False)]
         return parts
         
     except Exception as e:

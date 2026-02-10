@@ -1,19 +1,40 @@
 """Rebrickable API client for fetching LEGO parts inventory."""
 import logging
-from typing import List, Dict, Optional
+import os
+from typing import List, Dict, Optional, TYPE_CHECKING
 import aiohttp
 from backend.config import settings
 
+if TYPE_CHECKING:
+    from backend.core.api_cache import ApiCacheBackend
+
 logger = logging.getLogger(__name__)
+
+# Cache key prefixes for Rebrickable responses
+CACHE_KEY_SET = "rebrickable:set:"
+CACHE_KEY_SET_INDEX = "rebrickable:set_index"
+CACHE_KEY_SET_PARTS = "rebrickable:set_parts:"
+CACHE_KEY_PART_INFO = "rebrickable:part_info:"
+
+
+def _resolve_api_key(override: Optional[str] = None) -> str:
+    """Resolve API key: explicit override > settings (from .env/config) > REBRICKABLE_API_KEY env."""
+    if override and override.strip():
+        return override.strip()
+    key = (settings.rebrickable_api_key or "").strip()
+    if key:
+        return key
+    return (os.environ.get("REBRICKABLE_API_KEY") or "").strip()
 
 
 class RebrickableClient:
-    """Client for Rebrickable API v3."""
+    """Client for Rebrickable API v3. Optional cache reduces API calls and rate-limit risk."""
     
     BASE_URL = "https://rebrickable.com/api/v3/lego"
     
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or settings.rebrickable_api_key
+    def __init__(self, api_key: Optional[str] = None, cache: Optional["ApiCacheBackend"] = None):
+        self.api_key = _resolve_api_key(api_key)
+        self.cache = cache
     
     async def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
         """Make request to Rebrickable API."""
@@ -21,6 +42,9 @@ class RebrickableClient:
         headers = {
             "Authorization": f"key {self.api_key}"
         }
+
+        auth_preview = f"key {'(set)' if self.api_key else '(empty)'}"
+        logger.info(f"Rebrickable request: {url} {params}, auth: {auth_preview}")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, params=params or {}) as response:
@@ -64,7 +88,7 @@ class RebrickableClient:
                 "page_size": page_size
             }
         except Exception as e:
-            logger.error(f"Error searching sets: {e}")
+            logger.error(f"Errors searching sets: {e}")
             raise
     
     async def get_set_parts(self, set_num: str) -> List[Dict]:
@@ -81,6 +105,13 @@ class RebrickableClient:
             if "-" not in set_num:
                 set_num = f"{set_num}-1"
             
+            cache_key = f"{CACHE_KEY_SET_PARTS}{set_num}"
+            if self.cache:
+                cached = self.cache.get(cache_key)
+                if cached is not None:
+                    logger.debug("Rebrickable set_parts cache hit: %s", set_num)
+                    return cached
+            
             all_parts = []
             page = 1
             page_size = 1000
@@ -88,7 +119,8 @@ class RebrickableClient:
             while True:
                 params = {
                     "page": page,
-                    "page_size": page_size
+                    "page_size": page_size,
+                    "inc_color_details": 0
                 }
                 
                 result = await self._make_request(f"sets/{set_num}/parts", params)
@@ -116,6 +148,8 @@ class RebrickableClient:
                 
                 page += 1
             
+            if self.cache:
+                self.cache.set(cache_key, all_parts)
             return all_parts
             
         except Exception as e:
@@ -125,14 +159,23 @@ class RebrickableClient:
     async def get_part_info(self, part_num: str) -> Optional[Dict]:
         """Get detailed information about a specific part."""
         try:
-            result = await self._make_request(f"parts/{part_num}")
+            cache_key = f"{CACHE_KEY_PART_INFO}{part_num}"
+            if self.cache:
+                cached = self.cache.get(cache_key)
+                if cached is not None:
+                    logger.debug("Rebrickable part_info cache hit: %s", part_num)
+                    return cached
             
-            return {
+            result = await self._make_request(f"parts/{part_num}")
+            info = {
                 "part_num": result.get("part_num", ""),
                 "name": result.get("name", ""),
                 "part_cat_id": result.get("part_cat_id"),
                 "part_material": result.get("part_material", "")
             }
+            if self.cache:
+                self.cache.set(cache_key, info)
+            return info
             
         except Exception as e:
             logger.error(f"Error getting part info for {part_num}: {e}")

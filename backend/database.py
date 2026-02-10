@@ -21,34 +21,6 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class CachedSet(Base):
-    """Cache for LEGO set metadata from Brickset."""
-    __tablename__ = "cached_sets"
-    
-    id = Column(Integer, primary_key=True)
-    set_num = Column(String, unique=True, index=True)
-    name = Column(String)
-    year = Column(Integer)
-    theme = Column(String)
-    subtheme = Column(String)
-    pieces = Column(Integer)
-    image_url = Column(String)
-    data = Column(Text)  # JSON blob
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class CachedParts(Base):
-    """Cache for parts inventory from Rebrickable."""
-    __tablename__ = "cached_parts"
-    
-    id = Column(Integer, primary_key=True)
-    set_num = Column(String, index=True)
-    parts_data = Column(Text)  # JSON blob of parts list
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
 class Job(Base):
     """Track 3MF generation jobs."""
     __tablename__ = "jobs"
@@ -129,6 +101,17 @@ class AppSettings(Base):
     ldview_sort_transparent = Column(Boolean, default=True)
     ldview_use_stipple = Column(Boolean, default=False)
     ldview_memory_usage = Column(Integer, default=2)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ApiCache(Base):
+    """Generic key-value cache for external API responses (e.g. Rebrickable). Reduces rate-limit risk."""
+    __tablename__ = "api_cache"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

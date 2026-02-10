@@ -19,6 +19,7 @@ def _cache_filename(
     rotation_x: float,
     rotation_y: float,
     rotation_z: float,
+    quality_key: Optional[str] = None,
 ) -> str:
     """Build cache filename stem. Omit segments when 0 or false to keep names short."""
     parts = [part_num]
@@ -32,6 +33,8 @@ def _cache_filename(
         parts.append(f"rotationY{int(round(rotation_y))}")
     if rotation_z != 0:
         parts.append(f"rotationZ{int(round(rotation_z))}")
+    if quality_key:
+        parts.append(f"quality{quality_key}")
     return "_".join(parts)
 
 

@@ -29,6 +29,9 @@ class TestCacheFilename:
         assert "rotationY" not in s
         assert "rotationZ" not in s
 
+    def test_quality_key(self):
+        assert _cache_filename("3404", 10, True, 0, 0, 0, "high") == "3404_scale10_rotation1_qualityhigh"
+
 
 class TestSTLConverterRotationSuffix:
     def test_no_rotation_empty_suffix(self):

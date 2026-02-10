@@ -1,10 +1,12 @@
 """Generation routes for creating 3MF files."""
+import asyncio
 import logging
+import threading
 import uuid
 import zipfile
 from pathlib import Path
-from typing import List
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from backend.models.schemas import GenerateRequest, JobStatus
 from backend.api.integrations.rebrickable import RebrickableClient
@@ -21,6 +23,79 @@ import shutil
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# In-memory job progress (single-process). Key: job_id. Value: status, progress, error_message, log.
+# Multi-worker deployments would not share this store.
+_job_progress: Dict[str, Dict[str, Any]] = {}
+
+
+def get_job_progress_overlay(job_id: str) -> Optional[Dict[str, Any]]:
+    """Return overlay dict (status, progress, error_message, log) for a running job, or None."""
+    entry = _job_progress.get(job_id)
+    if not entry:
+        return None
+    return {
+        "status": entry["status"],
+        "progress": entry["progress"],
+        "error_message": entry.get("error_message"),
+        "log": entry.get("log"),
+    }
+
+
+def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Optional[int] = None,
+                      error_message: Optional[str] = None, log: Optional[str] = None) -> None:
+    """Update in-memory progress (no DB commit)."""
+    if job_id not in _job_progress:
+        _job_progress[job_id] = {
+            "status": "processing",
+            "progress": 0,
+            "error_message": None,
+            "log": None,
+        }
+    entry = _job_progress[job_id]
+    if status is not None:
+        entry["status"] = status
+    if progress is not None:
+        entry["progress"] = progress
+    if error_message is not None:
+        entry["error_message"] = error_message
+    if log is not None:
+        entry["log"] = log
+
+
+def _remove_job_progress(job_id: str) -> None:
+    """Remove job from in-memory store (call when job completes or fails)."""
+    _job_progress.pop(job_id, None)
+
+
+def _start_generation_thread(
+    job_id: str,
+    set_num: str,
+    plate_width: int,
+    plate_depth: int,
+    plate_height: int,
+    bypass_cache: bool = False,
+    generate_3mf: bool = True,
+    generate_stl: bool = True,
+) -> None:
+    """Run process_generation in a separate thread so the request returns immediately.
+    The server's event loop is not blocked, so job creation and polling respond right away.
+    """
+    def _run() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(
+                process_generation(
+                    job_id, set_num, plate_width, plate_depth, plate_height,
+                    bypass_cache, generate_3mf, generate_stl,
+                )
+            )
+        finally:
+            loop.close()
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
 
 
 async def process_generation(
@@ -47,29 +122,30 @@ async def process_generation(
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
     job_log = []
-    
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
             logger.error(f"Job {job_id} not found")
             return
-        
-        job.status = "processing"
-        job.progress = 5
-        db.commit()
+        db.commit()  # release read transaction so polling/other requests can use the DB
+        _set_job_progress(job_id, status="processing", progress=5)
         
         # Step 1: Ensure LDraw library exists
         logger.info(f"Job {job_id}: Checking LDraw library")
         ldraw_manager = LDrawManager()
         if not await ldraw_manager.ensure_library_exists():
-            job.status = "failed"
-            job.error_message = "Failed to download LDraw library"
-            job.log = "\n".join(job_log) if job_log else None
-            db.commit()
+            log_str = "\n".join(job_log) if job_log else None
+            _set_job_progress(job_id, status="failed", error_message="Failed to download LDraw library", log=log_str)
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = "Failed to download LDraw library"
+                job.log = log_str
+                db.commit()
+            _remove_job_progress(job_id)
             return
         
-        job.progress = 10
-        db.commit()
+        _set_job_progress(job_id, progress=10)
         
         # Step 2: Get parts list from Rebrickable (use cache to avoid repeat API calls)
         logger.info(f"Job {job_id}: Fetching parts list for set {set_num}")
@@ -77,20 +153,24 @@ async def process_generation(
         cache = DbApiCache(db)
         rebrickable = RebrickableClient(cache=cache)
         parts = await rebrickable.get_set_parts(set_num)
-        
+        db.commit()  # release so polling can read while we do STL work
         if not parts:
-            job.status = "failed"
-            job.error_message = f"No parts found for set {set_num}"
-            job.log = "\n".join(job_log) if job_log else None
-            db.commit()
+            log_str = "\n".join(job_log) if job_log else None
+            _set_job_progress(job_id, status="failed", error_message=f"No parts found for set {set_num}", log=log_str)
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = f"No parts found for set {set_num}"
+                job.log = log_str
+                db.commit()
+            _remove_job_progress(job_id)
             return
         
         # Filter out spare parts
         parts = [p for p in parts if not p.get('is_spare', False)]
         
         logger.info(f"Job {job_id}: Found {len(parts)} parts")
-        job.progress = 20
-        db.commit()
+        _set_job_progress(job_id, progress=20)
         
         # Per-part rotation and per-job scale/rotation from job settings
         try:
@@ -115,6 +195,7 @@ async def process_generation(
         scale_factor = float(scale_factor)
         scale_factor_backend = scale_factor * 10.0
         sync_config_from_db(db)  # use persisted LDView settings for conversion
+        db.commit()  # release so polling can read during STL conversion loop
         logger.info(f"Job {job_id}: Converting parts to STL with LDView")
         converter = STLConverter()
         logger.info(f"Using scale factor {scale_factor} (backend {scale_factor_backend}), rotation_enabled={rot_enabled} (X={rx}, Y={ry}, Z={rz}), per_part_rotation keys={len(per_part_rotation)}")
@@ -170,21 +251,24 @@ async def process_generation(
                 logger.warning(line)
                 job_log.append(line)
             
-            # Update progress
+            # Update progress (in-memory only)
             progress = 20 + int((converted_count / total_parts) * 50)
-            job.progress = min(progress, 70)
-            db.commit()
-        
+            _set_job_progress(job_id, progress=min(progress, 70))
+            db.commit()  # release after each part so polling/other requests are not blocked
         if not stl_files:
-            job.status = "failed"
-            job.error_message = "No parts could be converted to STL"
-            job.log = "\n".join(job_log) if job_log else None
-            db.commit()
+            log_str = "\n".join(job_log) if job_log else None
+            _set_job_progress(job_id, status="failed", error_message="No parts could be converted to STL", log=log_str)
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = "No parts could be converted to STL"
+                job.log = log_str
+                db.commit()
+            _remove_job_progress(job_id)
             return
         
         logger.info(f"Job {job_id}: Converted {len(stl_files)} part instances")
-        job.progress = 75
-        db.commit()
+        _set_job_progress(job_id, progress=75)
         
         # Step 4: Build output per options (3MF and/or STL; STLs go in stls/ subdir when in ZIP)
         output_filename = None
@@ -193,8 +277,7 @@ async def process_generation(
 
         if generate_3mf:
             logger.info(f"Job {job_id}: Generating 3MF")
-            job.progress = 80
-            db.commit()
+            _set_job_progress(job_id, progress=80)
             try:
                 unique_parts = {}
                 for stl_path, ldraw_id, color_rgb in stl_files:
@@ -211,9 +294,15 @@ async def process_generation(
             except Exception as e:
                 logger.error(f"Job {job_id}: 3MF generation error: {e}")
                 if not generate_stl:
-                    job.status = "failed"
-                    job.error_message = str(e)
-                    db.commit()
+                    log_str = "\n".join(job_log) if job_log else None
+                    _set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+                    job = db.query(Job).filter(Job.id == job_id).first()
+                    if job:
+                        job.status = "failed"
+                        job.error_message = str(e)
+                        job.log = log_str
+                        db.commit()
+                    _remove_job_progress(job_id)
                     return
                 generate_3mf = False
 
@@ -241,33 +330,45 @@ async def process_generation(
                         pass
             except Exception as e:
                 logger.error(f"Job {job_id}: Failed to create ZIP: {e}")
-                job.status = "failed"
-                job.error_message = str(e)
-                db.commit()
+                log_str = "\n".join(job_log) if job_log else None
+                _set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+                job = db.query(Job).filter(Job.id == job_id).first()
+                if job:
+                    job.status = "failed"
+                    job.error_message = str(e)
+                    job.log = log_str
+                    db.commit()
+                _remove_job_progress(job_id)
                 return
         else:
             output_filename = f"{job_id}.3mf"
 
-        job.progress = 95
-        db.commit()
+        _set_job_progress(job_id, progress=95)
 
-        # Complete the job
-        job.status = "completed"
-        job.progress = 100
-        job.output_file = output_filename
-        job.log = "\n".join(job_log) if job_log else None
-        db.commit()
+        # Complete the job: single DB commit with final state
+        log_str = "\n".join(job_log) if job_log else None
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.status = "completed"
+            job.progress = 100
+            job.output_file = output_filename
+            job.log = log_str
+            db.commit()
+        _remove_job_progress(job_id)
         
         logger.info(f"Job {job_id}: Completed successfully with {output_filename}")
         
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
+        log_str = "\n".join(job_log) if job_log else None
+        _set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
             job.status = "failed"
             job.error_message = str(e)
-            job.log = "\n".join(job_log) if job_log else None
+            job.log = log_str
             db.commit()
+        _remove_job_progress(job_id)
     
     finally:
         db.close()
@@ -276,7 +377,6 @@ async def process_generation(
 @router.post("/generate", response_model=JobStatus)
 async def generate_3mf(
     request: GenerateRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Generate 3MF file for a LEGO set."""
@@ -310,8 +410,7 @@ async def generate_3mf(
         db.commit()
         db.refresh(job)
 
-        background_tasks.add_task(
-            process_generation,
+        _start_generation_thread(
             job_id,
             request.set_num,
             request.plate_width,
@@ -319,9 +418,9 @@ async def generate_3mf(
             request.plate_height,
             request.bypass_cache,
             request.generate_3mf,
-            request.generate_stl
+            request.generate_stl,
         )
-        
+
         return JobStatus(
             job_id=job.id,
             set_num=job.set_num,
@@ -346,6 +445,20 @@ async def get_job_status(job_id: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    overlay = get_job_progress_overlay(job_id)
+    if overlay:
+        return JobStatus(
+            job_id=job.id,
+            set_num=job.set_num,
+            status=overlay["status"],
+            progress=overlay["progress"],
+            error_message=overlay.get("error_message"),
+            output_file=job.output_file,
+            brickgen_version=job.brickgen_version,
+            log=overlay.get("log"),
+            created_at=job.created_at,
+            updated_at=job.updated_at
+        )
     return JobStatus(
         job_id=job.id,
         set_num=job.set_num,
@@ -414,7 +527,6 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
 @router.post("/jobs/{job_id}/rerun", response_model=JobStatus)
 async def rerun_job(
     job_id: str,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Re-run a job with the same stored settings. Creates a new job."""
@@ -449,8 +561,7 @@ async def rerun_job(
     db.commit()
     db.refresh(new_job)
 
-    background_tasks.add_task(
-        process_generation,
+    _start_generation_thread(
         new_job_id,
         job.set_num,
         plate_width,
@@ -458,7 +569,7 @@ async def rerun_job(
         plate_height,
         bypass_cache,
         generate_3mf,
-        generate_stl
+        generate_stl,
     )
 
     return JobStatus(

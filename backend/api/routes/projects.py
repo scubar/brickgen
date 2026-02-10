@@ -2,13 +2,13 @@
 import logging
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 from backend.database import get_db, Project, Job
 from backend.config import settings
 from backend.version import __version__
-from backend.api.routes.generate import process_generation
+from backend.api.routes.generate import get_job_progress_overlay, _start_generation_thread
 import json
 
 logger = logging.getLogger(__name__)
@@ -168,28 +168,42 @@ async def list_project_jobs(project_id: str, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     jobs = db.query(Job).filter(Job.project_id == project_id).order_by(Job.created_at.desc()).all()
-    return [
-        JobResponse(
-            job_id=j.id,
-            set_num=j.set_num,
-            status=j.status,
-            progress=j.progress,
-            error_message=j.error_message,
-            output_file=j.output_file,
-            brickgen_version=j.brickgen_version,
-            log=j.log,
-            created_at=j.created_at.isoformat() if j.created_at else "",
-            updated_at=j.updated_at.isoformat() if j.updated_at else ""
-        )
-        for j in jobs
-    ]
+    result = []
+    for j in jobs:
+        overlay = get_job_progress_overlay(j.id)
+        if overlay:
+            result.append(JobResponse(
+                job_id=j.id,
+                set_num=j.set_num,
+                status=overlay["status"],
+                progress=overlay["progress"],
+                error_message=overlay.get("error_message"),
+                output_file=j.output_file,
+                brickgen_version=j.brickgen_version,
+                log=overlay.get("log"),
+                created_at=j.created_at.isoformat() if j.created_at else "",
+                updated_at=j.updated_at.isoformat() if j.updated_at else ""
+            ))
+        else:
+            result.append(JobResponse(
+                job_id=j.id,
+                set_num=j.set_num,
+                status=j.status,
+                progress=j.progress,
+                error_message=j.error_message,
+                output_file=j.output_file,
+                brickgen_version=j.brickgen_version,
+                log=j.log,
+                created_at=j.created_at.isoformat() if j.created_at else "",
+                updated_at=j.updated_at.isoformat() if j.updated_at else ""
+            ))
+    return result
 
 
 @router.post("/projects/{project_id}/jobs", response_model=JobResponse)
 async def create_project_job(
     project_id: str,
     body: JobCreateBody,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Create a new job for a project (same set, stored settings)."""
@@ -227,8 +241,7 @@ async def create_project_job(
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(
-        process_generation,
+    _start_generation_thread(
         job_id,
         project.set_num,
         body.plate_width,
@@ -236,7 +249,7 @@ async def create_project_job(
         body.plate_height,
         body.bypass_cache,
         body.generate_3mf,
-        body.generate_stl
+        body.generate_stl,
     )
 
     return JobResponse(

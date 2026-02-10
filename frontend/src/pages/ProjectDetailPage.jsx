@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
@@ -77,15 +77,31 @@ function ProjectDetailPage() {
     setColorRefPage(1)
   }, [project?.set_num])
 
+  // Poll job status every 2 seconds while a job is running
+  const activeJobIdRef = useRef(null)
+  activeJobIdRef.current = activeJobId
   useEffect(() => {
     if (!activeJobId) return
     const interval = setInterval(async () => {
+      const currentId = activeJobIdRef.current
+      if (!currentId) return
       try {
-        const r = await fetch(`/api/jobs/${activeJobId}`)
+        const r = await fetch(`/api/jobs/${currentId}`)
         if (!r.ok) return
         const j = await r.json()
+        const jobId = j.job_id ?? currentId
+        setJobs(prev => {
+          const idx = prev.findIndex(job => job.job_id === jobId)
+          const updated = { status: j.status, progress: j.progress, error_message: j.error_message, output_file: j.output_file, log: j.log }
+          if (idx >= 0) {
+            return prev.map((job, i) => i === idx ? { ...job, ...updated } : job)
+          }
+          return [{ job_id: jobId, set_num: j.set_num ?? '', ...updated, brickgen_version: j.brickgen_version ?? null, created_at: j.created_at ?? '', updated_at: j.updated_at ?? '' }, ...prev]
+        })
+        if (j.status === 'completed' || j.status === 'failed') {
+          setActiveJobId(null)
+        }
         await fetchJobs()
-        if (j.status === 'completed' || j.status === 'failed') setActiveJobId(null)
       } catch (e) {
         console.error(e)
       }
@@ -198,8 +214,16 @@ function ProjectDetailPage() {
       })
       if (!r.ok) throw new Error('Failed to create job')
       const data = await r.json()
-      setActiveJobId(data.job_id)
+      const jobId = data.job_id
       setWizardOpen(false)
+      setCreatingJob(false)
+      setJobs(prev => {
+        const exists = prev.some(j => j.job_id === jobId)
+        if (exists) return prev
+        const now = new Date().toISOString()
+        return [{ job_id: jobId, set_num: project?.set_num ?? '', status: 'pending', progress: 0, error_message: null, output_file: null, brickgen_version: data.brickgen_version ?? null, log: null, created_at: now, updated_at: now }, ...prev]
+      })
+      setActiveJobId(jobId)
       await fetchJobs()
     } catch (e) {
       console.error(e)
@@ -214,8 +238,9 @@ function ProjectDetailPage() {
     try {
       const r = await fetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
       if (r.ok) {
+        const data = await r.json()
+        setActiveJobId(data.job_id ?? null)
         await fetchJobs()
-        setActiveJobId(null)
       }
     } catch (e) {
       console.error(e)

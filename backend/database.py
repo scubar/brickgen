@@ -1,8 +1,7 @@
 """Database models and session management."""
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float, UniqueConstraint, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from backend.config import settings
 
 Base = declarative_base()

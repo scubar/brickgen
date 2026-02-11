@@ -50,7 +50,7 @@ def is_job_running(job_id: str) -> bool:
         return _running_job_id == job_id
 
 
-def _claim_job_slot(job_id: str) -> bool:
+def claim_job_slot(job_id: str) -> bool:
     """If no job is running, set _running_job_id to job_id and return True. Otherwise return False."""
     global _running_job_id
     with _job_progress_lock:
@@ -74,7 +74,7 @@ def get_job_progress_overlay(job_id: str) -> Optional[Dict[str, Any]]:
         }
 
 
-def _last_log_line(full_log: Optional[str]) -> Optional[str]:
+def last_log_line(full_log: Optional[str]) -> Optional[str]:
     """Return only the latest log line for API responses (smaller poll payload)."""
     if not full_log or not full_log.strip():
         return None
@@ -106,7 +106,7 @@ def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Op
             "status": entry["status"],
             "progress": entry["progress"],
             "error_message": entry.get("error_message"),
-            "log": _last_log_line(entry.get("log")),
+            "log": last_log_line(entry.get("log")),
         }
     try:
         _progress_queue.put_nowait((job_id, payload))
@@ -142,7 +142,7 @@ async def broadcast_progress_task() -> None:
         await asyncio.sleep(0)
 
 
-def _start_generation_thread(
+def start_generation_thread(
     job_id: str,
     set_num: str,
     plate_width: int,
@@ -490,7 +490,7 @@ async def generate_3mf(
     """Generate 3MF file for a LEGO set."""
     try:
         job_id = str(uuid.uuid4())
-        if not _claim_job_slot(job_id):
+        if not claim_job_slot(job_id):
             raise HTTPException(
                 status_code=409,
                 detail="Another generation job is already running. Only one job can run at a time.",
@@ -523,7 +523,7 @@ async def generate_3mf(
         db.commit()
         db.refresh(job)
 
-        _start_generation_thread(
+        start_generation_thread(
             job_id,
             request.set_num,
             request.plate_width,
@@ -562,7 +562,7 @@ async def get_job_progress(job_id: str):
         status=overlay["status"],
         progress=overlay["progress"],
         error_message=overlay.get("error_message"),
-        log=_last_log_line(overlay.get("log")),
+        log=last_log_line(overlay.get("log")),
     )
 
 
@@ -580,7 +580,7 @@ async def websocket_job_progress(websocket: WebSocket, job_id: str):
                 "status": overlay["status"],
                 "progress": overlay["progress"],
                 "error_message": overlay.get("error_message"),
-                "log": _last_log_line(overlay.get("log")),
+                "log": last_log_line(overlay.get("log")),
             })
         except Exception:
             pass
@@ -701,7 +701,7 @@ async def rerun_job(
     generate_stl = s.get("generate_stl", True)
 
     new_job_id = str(uuid.uuid4())
-    if not _claim_job_slot(new_job_id):
+    if not claim_job_slot(new_job_id):
         raise HTTPException(
             status_code=409,
             detail="Another generation job is already running. Only one job can run at a time.",
@@ -722,7 +722,7 @@ async def rerun_job(
     db.commit()
     db.refresh(new_job)
 
-    _start_generation_thread(
+    start_generation_thread(
         new_job_id,
         job.set_num,
         plate_width,

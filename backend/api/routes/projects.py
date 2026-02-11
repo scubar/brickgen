@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db, Project, Job
 from backend.config import settings
 from backend.version import __version__
-from backend.api.routes.generate import get_job_progress_overlay, _last_log_line, _start_generation_thread
+from backend.api.routes.generate import get_job_progress_overlay, _last_log_line, _start_generation_thread, _claim_job_slot
 import json
 
 logger = logging.getLogger(__name__)
@@ -212,6 +212,11 @@ async def create_project_job(
         raise HTTPException(status_code=404, detail="Project not found")
 
     job_id = str(uuid.uuid4())
+    if not _claim_job_slot(job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Another generation job is already running. Only one job can run at a time.",
+        )
     settings_obj = {
         "plate_width": body.plate_width,
         "plate_depth": body.plate_depth,

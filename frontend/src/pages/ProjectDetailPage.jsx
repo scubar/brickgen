@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../api'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
@@ -64,7 +65,7 @@ function ProjectDetailPage() {
 
   useEffect(() => {
     if (project?.set_num) {
-      fetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`)
+      apiFetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`)
         .then((r) => r.ok ? r.json() : [])
         .then(setPartsList)
         .catch(() => setPartsList([]))
@@ -129,8 +130,8 @@ function ProjectDetailPage() {
         ws?.close()
         clearTimeout(reconnectTimer)
         clearInterval(pollingTimer)
-        fetch(`/api/jobs/${jobId}`)
-          .then((r) => r.ok ? r.json() : null)
+apiFetch(`/api/jobs/${jobId}`)
+        .then((r) => r.ok ? r.json() : null)
           .then((j) => {
             if (j) setJobs(prev => prev.map(job => job.job_id === jobId ? { ...job, ...j, job_id: j.job_id ?? jobId } : job))
           })
@@ -147,14 +148,14 @@ function ProjectDetailPage() {
           return
         }
         try {
-          const r = await fetch(`/api/jobs/${jobId}/progress`)
+          const r = await apiFetch(`/api/jobs/${jobId}/progress`)
           if (r.ok) {
             const p = await r.json()
             updateJobProgress(p)
             checkJobCompletion(p.status)
           } else if (r.status === 404) {
             // Job no longer in progress, check final status
-            const fullJob = await fetch(`/api/jobs/${jobId}`)
+            const fullJob = await apiFetch(`/api/jobs/${jobId}`)
             if (fullJob.ok) {
               const j = await fullJob.json()
               updateJobProgress(j)
@@ -196,7 +197,7 @@ function ProjectDetailPage() {
           }
           
           // Check if job is still running before reconnecting
-          fetch(`/api/jobs/${jobId}/progress`)
+          apiFetch(`/api/jobs/${jobId}/progress`)
             .then((r) => r.ok ? r.json() : null)
             .then((p) => {
               if (p && (p.status === 'processing' || p.status === 'pending')) {
@@ -249,7 +250,7 @@ function ProjectDetailPage() {
 
   const fetchVersion = async () => {
     try {
-      const r = await fetch('/api/version')
+      const r = await apiFetch('/api/version')
       if (r.ok) {
         const d = await r.json()
         setCurrentVersion(d.version)
@@ -261,7 +262,7 @@ function ProjectDetailPage() {
 
   const fetchProject = async () => {
     try {
-      const r = await fetch(`/api/projects/${projectId}`)
+      const r = await apiFetch(`/api/projects/${projectId}`)
       if (!r.ok) throw new Error('Project not found')
       setProject(await r.json())
     } catch (e) {
@@ -273,7 +274,7 @@ function ProjectDetailPage() {
 
   const fetchJobs = async () => {
     try {
-      const r = await fetch(`/api/projects/${projectId}/jobs`)
+      const r = await apiFetch(`/api/projects/${projectId}/jobs`)
       if (r.ok) setJobs(await r.json())
     } catch (e) {
       console.error(e)
@@ -287,8 +288,8 @@ function ProjectDetailPage() {
     setWizardOpen(true)
     try {
       const [settingsRes, partsRes] = await Promise.all([
-        fetch('/api/settings'),
-        project?.set_num ? fetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`) : Promise.resolve(null)
+        apiFetch('/api/settings'),
+        project?.set_num ? apiFetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`) : Promise.resolve(null)
       ])
       if (settingsRes?.ok) {
         const s = await settingsRes.json()
@@ -336,7 +337,7 @@ function ProjectDetailPage() {
   const createJob = async () => {
     setCreatingJob(true)
     try {
-      const r = await fetch(`/api/projects/${projectId}/jobs`, {
+      const r = await apiFetch(`/api/projects/${projectId}/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -350,7 +351,7 @@ function ProjectDetailPage() {
           scale_factor: (scaleFactor != null && scaleFactor > 0) ? Number(scaleFactor) : (parseFloat(wizardGlobalSettings?.stl_scale_factor) || 1.0)
         })
       })
-      if (!r.ok) throw new Error('Failed to create job')
+      if (!r.ok) return
       const data = await r.json()
       const jobId = data.job_id
       setWizardOpen(false)
@@ -374,12 +375,11 @@ function ProjectDetailPage() {
     const warn = currentVersion && jobVersion && currentVersion !== jobVersion
     if (warn && !confirm('This job was created with a different BrickGen version. There may be issues; consider creating a new job instead. Re-run anyway?')) return
     try {
-      const r = await fetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
-      if (r.ok) {
-        const data = await r.json()
-        setActiveJobId(data.job_id ?? null)
-        await fetchJobs()
-      }
+      const r = await apiFetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
+      if (!r.ok) return
+      const data = await r.json()
+      setActiveJobId(data.job_id ?? null)
+      await fetchJobs()
     } catch (e) {
       console.error(e)
     }
@@ -388,7 +388,8 @@ function ProjectDetailPage() {
   const deleteJobFiles = async (jobId) => {
     if (!confirm('Remove this job\'s output file from disk?')) return
     try {
-      await fetch(`/api/jobs/${jobId}/files`, { method: 'DELETE' })
+      const r = await apiFetch(`/api/jobs/${jobId}/files`, { method: 'DELETE' })
+      if (!r.ok) return
       await fetchJobs()
     } catch (e) {
       console.error(e)
@@ -399,8 +400,9 @@ function ProjectDetailPage() {
     if (!confirm('Delete this job and its output file? This cannot be undone.')) return
     setDeletingJobId(jobId)
     try {
-      const r = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
-      if (r.ok) await fetchJobs()
+      const r = await apiFetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
+      if (!r.ok) return
+      await fetchJobs()
     } catch (e) {
       console.error(e)
     } finally {
@@ -411,7 +413,8 @@ function ProjectDetailPage() {
   const deleteProject = async () => {
     if (!confirm('Delete this project and all its jobs and output files?')) return
     try {
-      await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      const r = await apiFetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      if (!r.ok) return
       navigate('/projects')
     } catch (e) {
       console.error(e)

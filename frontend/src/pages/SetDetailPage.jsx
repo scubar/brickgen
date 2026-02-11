@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { apiFetch } from '../api'
 
 function SetDetailPage() {
   const { setNum } = useParams()
@@ -30,7 +31,7 @@ function SetDetailPage() {
   useEffect(() => setPartsPage(1), [setNum, partsList.length])
 
   useEffect(() => {
-    fetch('/api/settings')
+    apiFetch('/api/settings')
       .then(r => r.ok ? r.json() : {})
       .then(s => setAutoGeneratePartPreviews(s.auto_generate_part_previews !== false))
       .catch(() => {})
@@ -38,7 +39,7 @@ function SetDetailPage() {
 
   const fetchSetDetail = async () => {
     try {
-      const response = await fetch(`/api/sets/${setNum}`)
+      const response = await apiFetch(`/api/sets/${setNum}`)
       if (!response.ok) throw new Error('Failed to fetch set details')
       const data = await response.json()
       setSetDetail(data)
@@ -52,7 +53,7 @@ function SetDetailPage() {
   const fetchPartsList = async () => {
     try {
       setLoadingParts(true)
-      const response = await fetch(`/api/sets/${setNum}/parts`)
+      const response = await apiFetch(`/api/sets/${setNum}/parts`)
       if (response.ok) {
         const data = await response.json()
         setPartsList(data)
@@ -70,7 +71,7 @@ function SetDetailPage() {
     setCreatingProject(true)
     setProjectDuplicateWarning(false)
     try {
-      const r = await fetch('/api/projects', {
+      const r = await apiFetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ set_num: setDetail?.set_num || setNum, name })

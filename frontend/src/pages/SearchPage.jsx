@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { apiFetch } from '../api'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
@@ -34,7 +35,7 @@ function SearchPage() {
       setError(null)
       const pageNum = state.searchPage ?? 1
       const size = state.pageSize ?? 20
-      fetch(`/api/search?query=${encodeURIComponent(state.searchQuery)}&page=${pageNum}&page_size=${size}`)
+      apiFetch(`/api/search?query=${encodeURIComponent(state.searchQuery)}&page=${pageNum}&page_size=${size}`)
         .then((r) => r.ok ? r.json() : Promise.reject(new Error('Search failed')))
         .then((data) => {
           setResults(data.results || [])
@@ -55,7 +56,7 @@ function SearchPage() {
       return
     }
     const t = setTimeout(() => {
-      fetch(`/api/search/suggest?q=${encodeURIComponent(query)}&limit=10`)
+      apiFetch(`/api/search/suggest?q=${encodeURIComponent(query)}&limit=10`)
         .then((r) => r.ok ? r.json() : [])
         .then(setSuggestions)
         .catch(() => setSuggestions([]))
@@ -71,7 +72,7 @@ function SearchPage() {
 
   const fetchHistory = async () => {
     try {
-      const r = await fetch('/api/search/history?limit=20')
+      const r = await apiFetch('/api/search/history?limit=20')
       if (r.ok) setSearchHistory(await r.json())
     } catch (e) {
       console.error(e)
@@ -85,7 +86,7 @@ function SearchPage() {
     setError(null)
     try {
       const url = `/api/search?query=${encodeURIComponent(query)}&page=${pageNum}&page_size=${pageSize}`
-      const response = await fetch(url)
+      const response = await apiFetch(url)
       if (!response.ok) throw new Error('Search failed')
       const data = await response.json()
       setResults(data.results || [])
@@ -105,7 +106,7 @@ function SearchPage() {
 
   const removeHistoryItem = async (q) => {
     try {
-      const r = await fetch(`/api/search/history?query=${encodeURIComponent(q)}`, { method: 'DELETE' })
+      const r = await apiFetch(`/api/search/history?query=${encodeURIComponent(q)}`, { method: 'DELETE' })
       if (r.ok) setSearchHistory((prev) => prev.filter((x) => x !== q))
     } catch (e) {
       console.error(e)

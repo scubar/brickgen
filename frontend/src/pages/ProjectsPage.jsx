@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiFetch } from '../api'
 
 function ProjectsPage() {
   const [projects, setProjects] = useState([])
@@ -13,7 +14,7 @@ function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      const r = await fetch('/api/projects')
+      const r = await apiFetch('/api/projects')
       if (r.ok) setProjects(await r.json())
     } catch (e) {
       console.error(e)
@@ -27,7 +28,7 @@ function ProjectsPage() {
     if (!confirm('Delete this project and all its jobs and output files?')) return
     setDeletingId(projectId)
     try {
-      const r = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      const r = await apiFetch(`/api/projects/${projectId}`, { method: 'DELETE' })
       if (r.ok) await fetchProjects()
     } catch (e) {
       console.error(e)

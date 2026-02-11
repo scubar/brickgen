@@ -30,9 +30,34 @@ router = APIRouter()
 _job_progress: Dict[str, Dict[str, Any]] = {}
 _job_progress_lock = threading.Lock()
 
+# Only one generation job may run at a time. Set when a job is started, cleared when it ends.
+_running_job_id: Optional[str] = None
+
 # WebSocket: job_id -> list of connected WebSockets. Progress updates are pushed via _progress_queue.
 _ws_subscribers: Dict[str, List[Any]] = {}
 _progress_queue: queue.Queue = queue.Queue()
+
+
+def is_any_job_running() -> bool:
+    """Return True if a generation job is currently running (slot claimed)."""
+    with _job_progress_lock:
+        return _running_job_id is not None
+
+
+def is_job_running(job_id: str) -> bool:
+    """Return True if the given job is currently running."""
+    with _job_progress_lock:
+        return _running_job_id == job_id
+
+
+def _claim_job_slot(job_id: str) -> bool:
+    """If no job is running, set _running_job_id to job_id and return True. Otherwise return False."""
+    global _running_job_id
+    with _job_progress_lock:
+        if _running_job_id is not None:
+            return False
+        _running_job_id = job_id
+        return True
 
 
 def get_job_progress_overlay(job_id: str) -> Optional[Dict[str, Any]]:
@@ -90,9 +115,12 @@ def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Op
 
 
 def _remove_job_progress(job_id: str) -> None:
-    """Remove job from in-memory store (call when job completes or fails)."""
+    """Remove job from in-memory store and release the single-job slot (call when job completes or fails)."""
+    global _running_job_id
     with _job_progress_lock:
         _job_progress.pop(job_id, None)
+        if _running_job_id == job_id:
+            _running_job_id = None
 
 
 async def broadcast_progress_task() -> None:
@@ -173,7 +201,10 @@ async def process_generation(
         if not job:
             logger.error(f"Job {job_id} not found")
             return
-        db.commit()  # release read transaction so polling/other requests can use the DB
+        # Persist "processing" at start so GET /jobs/{id} is correct even without the in-memory overlay (restart/multi-worker).
+        job.status = "processing"
+        job.progress = 0
+        db.commit()
         job_log.append("Checking LDraw library...")
         _set_job_progress(job_id, status="processing", progress=5, log="\n".join(job_log))
         
@@ -431,8 +462,7 @@ async def process_generation(
             db.commit()
         # Push final state to WebSocket clients before removing overlay (so UI updates without refresh)
         _set_job_progress(job_id, status="completed", progress=100, log=log_str)
-        _remove_job_progress(job_id)
-        
+
         logger.info(f"Job {job_id}: Completed successfully with {output_filename}")
         
     except Exception as e:
@@ -448,6 +478,7 @@ async def process_generation(
         _remove_job_progress(job_id)
     
     finally:
+        _remove_job_progress(job_id)
         db.close()
 
 
@@ -459,6 +490,11 @@ async def generate_3mf(
     """Generate 3MF file for a LEGO set."""
     try:
         job_id = str(uuid.uuid4())
+        if not _claim_job_slot(job_id):
+            raise HTTPException(
+                status_code=409,
+                detail="Another generation job is already running. Only one job can run at a time.",
+            )
         settings_obj = {
             "plate_width": request.plate_width,
             "plate_depth": request.plate_depth,
@@ -604,6 +640,11 @@ async def delete_job_files(job_id: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if is_job_running(job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete job output while the job is running.",
+        )
     out_file = job.output_file
     if not out_file:
         return {"message": "Job has no output file", "deleted": False}
@@ -622,6 +663,11 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if is_job_running(job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete job while it is running.",
+        )
     if job.output_file:
         path = settings.output_dir / job.output_file
         if path.exists():
@@ -655,6 +701,11 @@ async def rerun_job(
     generate_stl = s.get("generate_stl", True)
 
     new_job_id = str(uuid.uuid4())
+    if not _claim_job_slot(new_job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Another generation job is already running. Only one job can run at a time.",
+        )
     new_job = Job(
         id=new_job_id,
         set_num=job.set_num,

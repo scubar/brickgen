@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Header from './components/Header'
+import ApiErrorProvider from './components/ApiErrorProvider'
 import SearchPage from './pages/SearchPage'
 import SetDetailPage from './pages/SetDetailPage'
 import SettingsPage from './pages/SettingsPage'
@@ -12,6 +13,7 @@ function App() {
       <div className="min-h-screen bg-dk-1 flex flex-col">
         <Header />
         <main className="container mx-auto px-4 py-8 flex-1">
+          <ApiErrorProvider>
           <Routes>
             <Route path="/" element={<SearchPage />} />
             <Route path="/set/:setNum" element={<SetDetailPage />} />
@@ -22,6 +24,7 @@ function App() {
             <Route path="/settings/database" element={<SettingsPage />} />
             <Route path="/attributions" element={<AttributionsPage />} />
           </Routes>
+          </ApiErrorProvider>
         </main>
         <footer className="border-t border-dk-3 bg-dk-2 mt-auto py-3 px-4 text-center text-sm text-dk-5">
           This project is not compatible with LEGO&trade;. LEGO&trade; is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.

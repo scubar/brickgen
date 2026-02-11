@@ -85,49 +85,164 @@ function ProjectDetailPage() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/api/jobs/${encodeURIComponent(jobId)}/ws`
     let ws = null
-    try {
-      ws = new WebSocket(wsUrl)
-      ws.onmessage = (event) => {
-        try {
-          const p = JSON.parse(event.data)
-          setJobs(prev => {
-            const idx = prev.findIndex(job => job.job_id === jobId)
-            const updated = { status: p.status, progress: p.progress, error_message: p.error_message ?? null, log: p.log ?? null }
-            if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
-            return [{ job_id: jobId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
+    let reconnectAttempts = 0
+    let reconnectTimer = null
+    let pollingTimer = null
+    let shouldReconnect = true
+    const MAX_RECONNECT_ATTEMPTS = 5
+    const INITIAL_BACKOFF_MS = 1000
+    const MAX_BACKOFF_MS = 16000
+    const POLLING_INTERVAL_MS = 2000
+
+    const calculateBackoff = (attemptNumber) => {
+      return Math.min(INITIAL_BACKOFF_MS * Math.pow(2, attemptNumber - 1), MAX_BACKOFF_MS)
+    }
+
+    const createPlaceholderJob = (jobId, statusData) => ({
+      job_id: jobId,
+      set_num: '',
+      status: statusData.status,
+      progress: statusData.progressValue,
+      error_message: statusData.error_message ?? null,
+      log: statusData.log ?? null,
+      output_file: null,
+      brickgen_version: null,
+      created_at: '',
+      updated_at: ''
+    })
+
+    const updateJobProgress = (progress) => {
+      const { status, progress: progressValue, error_message, log } = progress
+      setJobs(prev => {
+        const idx = prev.findIndex(job => job.job_id === jobId)
+        const updated = { status, progress: progressValue, error_message: error_message ?? null, log: log ?? null }
+        if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
+        // Create a placeholder job entry for jobs not yet in the list
+        return [createPlaceholderJob(jobId, { status, progressValue, error_message, log }), ...prev]
+      })
+    }
+
+    const checkJobCompletion = (status) => {
+      if (status === 'completed' || status === 'failed') {
+        shouldReconnect = false
+        setActiveJobId(null)
+        ws?.close()
+        clearTimeout(reconnectTimer)
+        clearInterval(pollingTimer)
+        fetch(`/api/jobs/${jobId}`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((j) => {
+            if (j) setJobs(prev => prev.map(job => job.job_id === jobId ? { ...job, ...j, job_id: j.job_id ?? jobId } : job))
           })
-          if (p.status === 'completed' || p.status === 'failed') {
-            setActiveJobId(null)
-            ws?.close()
-            fetch(`/api/jobs/${jobId}`)
-              .then((r) => r.ok ? r.json() : null)
-              .then((j) => {
-                if (j) setJobs(prev => prev.map(job => job.job_id === jobId ? { ...job, ...j, job_id: j.job_id ?? jobId } : job))
-              })
-              .finally(fetchJobs)
+          .finally(fetchJobs)
+      }
+    }
+
+    const startPolling = () => {
+      if (pollingTimer) return
+      console.log(`Starting polling fallback for job ${jobId}`)
+      pollingTimer = setInterval(async () => {
+        if (activeJobIdRef.current !== jobId) {
+          clearInterval(pollingTimer)
+          return
+        }
+        try {
+          const r = await fetch(`/api/jobs/${jobId}/progress`)
+          if (r.ok) {
+            const p = await r.json()
+            updateJobProgress(p)
+            checkJobCompletion(p.status)
+          } else if (r.status === 404) {
+            // Job no longer in progress, check final status
+            const fullJob = await fetch(`/api/jobs/${jobId}`)
+            if (fullJob.ok) {
+              const j = await fullJob.json()
+              updateJobProgress(j)
+              checkJobCompletion(j.status)
+            }
           }
         } catch (e) {
-          console.error(e)
+          console.error('Polling error:', e)
         }
-      }
-      ws.onclose = () => {
-        if (activeJobIdRef.current === jobId) {
-          setActiveJobId(null)
-          fetchJobs()
-        }
-      }
-      ws.onerror = () => {
-        if (activeJobIdRef.current === jobId) {
-          setActiveJobId(null)
-          fetchJobs()
-        }
-      }
-    } catch (e) {
-      console.error(e)
-      setActiveJobId(null)
-      fetchJobs()
+      }, POLLING_INTERVAL_MS)
     }
+
+    const connectWebSocket = () => {
+      try {
+        ws = new WebSocket(wsUrl)
+        
+        ws.onopen = () => {
+          console.log(`WebSocket connected for job ${jobId}`)
+          reconnectAttempts = 0
+          if (pollingTimer) {
+            clearInterval(pollingTimer)
+            pollingTimer = null
+          }
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const p = JSON.parse(event.data)
+            updateJobProgress(p)
+            checkJobCompletion(p.status)
+          } catch (e) {
+            console.error(e)
+          }
+        }
+
+        ws.onclose = () => {
+          if (!shouldReconnect || activeJobIdRef.current !== jobId) {
+            return
+          }
+          
+          // Check if job is still running before reconnecting
+          fetch(`/api/jobs/${jobId}/progress`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((p) => {
+              if (p && (p.status === 'processing' || p.status === 'pending')) {
+                // Job still running, attempt reconnect
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                  reconnectAttempts++
+                  const backoffMs = calculateBackoff(reconnectAttempts)
+                  console.log(`WebSocket closed, reconnecting in ${backoffMs}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
+                  reconnectTimer = setTimeout(connectWebSocket, backoffMs)
+                } else {
+                  console.log(`Max reconnection attempts reached, falling back to polling`)
+                  startPolling()
+                }
+              } else {
+                // Job completed or not found, fetch final state
+                fetchJobs()
+              }
+            })
+            .catch(() => {
+              // Error fetching progress, try reconnecting or polling
+              if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++
+                const backoffMs = calculateBackoff(reconnectAttempts)
+                reconnectTimer = setTimeout(connectWebSocket, backoffMs)
+              } else {
+                startPolling()
+              }
+            })
+        }
+
+        ws.onerror = () => {
+          console.error('WebSocket error')
+        }
+      } catch (e) {
+        console.error('WebSocket creation error:', e)
+        // Fall back to polling immediately
+        startPolling()
+      }
+    }
+
+    connectWebSocket()
+
     return () => {
+      shouldReconnect = false
+      clearTimeout(reconnectTimer)
+      clearInterval(pollingTimer)
       if (ws && ws.readyState !== WebSocket.CLOSED) ws.close()
     }
   }, [activeJobId, projectId])

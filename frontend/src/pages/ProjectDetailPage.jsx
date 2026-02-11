@@ -91,14 +91,20 @@ function ProjectDetailPage() {
     let shouldReconnect = true
     const MAX_RECONNECT_ATTEMPTS = 5
     const INITIAL_BACKOFF_MS = 1000
-    const MAX_BACKOFF_MS = 30000
+    const MAX_BACKOFF_MS = 16000
     const POLLING_INTERVAL_MS = 2000
 
+    const calculateBackoff = (attempt) => {
+      return Math.min(INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1), MAX_BACKOFF_MS)
+    }
+
     const updateJobProgress = (progress) => {
+      const { status, progress: prog, error_message, log } = progress
       setJobs(prev => {
         const idx = prev.findIndex(job => job.job_id === jobId)
-        const updated = { status: progress.status, progress: progress.progress, error_message: progress.error_message ?? null, log: progress.log ?? null }
+        const updated = { status, progress: prog, error_message: error_message ?? null, log: log ?? null }
         if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
+        // Create a placeholder job entry for jobs not yet in the list
         return [{ job_id: jobId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
       })
     }
@@ -184,7 +190,7 @@ function ProjectDetailPage() {
                 // Job still running, attempt reconnect
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                   reconnectAttempts++
-                  const backoffMs = Math.min(INITIAL_BACKOFF_MS * Math.pow(2, reconnectAttempts - 1), MAX_BACKOFF_MS)
+                  const backoffMs = calculateBackoff(reconnectAttempts)
                   console.log(`WebSocket closed, reconnecting in ${backoffMs}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
                   reconnectTimer = setTimeout(connectWebSocket, backoffMs)
                 } else {
@@ -200,7 +206,7 @@ function ProjectDetailPage() {
               // Error fetching progress, try reconnecting or polling
               if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                 reconnectAttempts++
-                const backoffMs = Math.min(INITIAL_BACKOFF_MS * Math.pow(2, reconnectAttempts - 1), MAX_BACKOFF_MS)
+                const backoffMs = calculateBackoff(reconnectAttempts)
                 reconnectTimer = setTimeout(connectWebSocket, backoffMs)
               } else {
                 startPolling()

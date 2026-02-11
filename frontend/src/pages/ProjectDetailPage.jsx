@@ -94,18 +94,31 @@ function ProjectDetailPage() {
     const MAX_BACKOFF_MS = 16000
     const POLLING_INTERVAL_MS = 2000
 
-    const calculateBackoff = (attempt) => {
-      return Math.min(INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1), MAX_BACKOFF_MS)
+    const calculateBackoff = (attemptNumber) => {
+      return Math.min(INITIAL_BACKOFF_MS * Math.pow(2, attemptNumber - 1), MAX_BACKOFF_MS)
     }
 
+    const createPlaceholderJob = (jobId, statusData) => ({
+      job_id: jobId,
+      set_num: '',
+      status: statusData.status,
+      progress: statusData.progressValue,
+      error_message: statusData.error_message ?? null,
+      log: statusData.log ?? null,
+      output_file: null,
+      brickgen_version: null,
+      created_at: '',
+      updated_at: ''
+    })
+
     const updateJobProgress = (progress) => {
-      const { status, progress: prog, error_message, log } = progress
+      const { status, progress: progressValue, error_message, log } = progress
       setJobs(prev => {
         const idx = prev.findIndex(job => job.job_id === jobId)
-        const updated = { status, progress: prog, error_message: error_message ?? null, log: log ?? null }
+        const updated = { status, progress: progressValue, error_message: error_message ?? null, log: log ?? null }
         if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
         // Create a placeholder job entry for jobs not yet in the list
-        return [{ job_id: jobId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
+        return [createPlaceholderJob(jobId, { status, progressValue, error_message, log }), ...prev]
       })
     }
 

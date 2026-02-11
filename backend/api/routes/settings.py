@@ -588,8 +588,9 @@ async def get_database_info(db: Session = Depends(get_db)):
             row = r.fetchone()
             if row:
                 current_revision = row[0]
-        except Exception:
-            pass
+        except Exception as e:
+            # Log so we can see why the read failed (missing table, locked DB, wrong path, etc.)
+            logger.warning("Could not read alembic_version: %s", e, exc_info=False)
 
     # __file__ is backend/api/routes/settings.py -> backend is parent.parent.parent, project root is parent.parent.parent.parent
     project_root = Path(__file__).resolve().parent.parent.parent.parent

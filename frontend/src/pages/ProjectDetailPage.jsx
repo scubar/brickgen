@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
@@ -77,20 +77,59 @@ function ProjectDetailPage() {
     setColorRefPage(1)
   }, [project?.set_num])
 
+  const activeJobIdRef = useRef(null)
+  activeJobIdRef.current = activeJobId
   useEffect(() => {
     if (!activeJobId) return
-    const interval = setInterval(async () => {
-      try {
-        const r = await fetch(`/api/jobs/${activeJobId}`)
-        if (!r.ok) return
-        const j = await r.json()
-        await fetchJobs()
-        if (j.status === 'completed' || j.status === 'failed') setActiveJobId(null)
-      } catch (e) {
-        console.error(e)
+    const jobId = activeJobId
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/api/jobs/${encodeURIComponent(jobId)}/ws`
+    let ws = null
+    try {
+      ws = new WebSocket(wsUrl)
+      ws.onmessage = (event) => {
+        try {
+          const p = JSON.parse(event.data)
+          setJobs(prev => {
+            const idx = prev.findIndex(job => job.job_id === jobId)
+            const updated = { status: p.status, progress: p.progress, error_message: p.error_message ?? null, log: p.log ?? null }
+            if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
+            return [{ job_id: jobId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
+          })
+          if (p.status === 'completed' || p.status === 'failed') {
+            setActiveJobId(null)
+            ws?.close()
+            fetch(`/api/jobs/${jobId}`)
+              .then((r) => r.ok ? r.json() : null)
+              .then((j) => {
+                if (j) setJobs(prev => prev.map(job => job.job_id === jobId ? { ...job, ...j, job_id: j.job_id ?? jobId } : job))
+              })
+              .finally(fetchJobs)
+          }
+        } catch (e) {
+          console.error(e)
+        }
       }
-    }, 2000)
-    return () => clearInterval(interval)
+      ws.onclose = () => {
+        if (activeJobIdRef.current === jobId) {
+          setActiveJobId(null)
+          fetchJobs()
+        }
+      }
+      ws.onerror = () => {
+        if (activeJobIdRef.current === jobId) {
+          setActiveJobId(null)
+          fetchJobs()
+        }
+      }
+    } catch (e) {
+      console.error(e)
+      setActiveJobId(null)
+      fetchJobs()
+    }
+    return () => {
+      if (ws && ws.readyState !== WebSocket.CLOSED) ws.close()
+    }
   }, [activeJobId, projectId])
 
   const fetchVersion = async () => {
@@ -198,8 +237,16 @@ function ProjectDetailPage() {
       })
       if (!r.ok) throw new Error('Failed to create job')
       const data = await r.json()
-      setActiveJobId(data.job_id)
+      const jobId = data.job_id
       setWizardOpen(false)
+      setCreatingJob(false)
+      setJobs(prev => {
+        const exists = prev.some(j => j.job_id === jobId)
+        if (exists) return prev
+        const now = new Date().toISOString()
+        return [{ job_id: jobId, set_num: project?.set_num ?? '', status: 'pending', progress: 0, error_message: null, output_file: null, brickgen_version: data.brickgen_version ?? null, log: null, created_at: now, updated_at: now }, ...prev]
+      })
+      setActiveJobId(jobId)
       await fetchJobs()
     } catch (e) {
       console.error(e)
@@ -214,8 +261,9 @@ function ProjectDetailPage() {
     try {
       const r = await fetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
       if (r.ok) {
+        const data = await r.json()
+        setActiveJobId(data.job_id ?? null)
         await fetchJobs()
-        setActiveJobId(null)
       }
     } catch (e) {
       console.error(e)
@@ -363,14 +411,20 @@ function ProjectDetailPage() {
         ) : (
           <ul className="divide-y divide-dk-3">
             {jobs.map((j) => (
-              <li key={j.job_id} className="py-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <span className="font-medium text-dk-5">{j.job_id.slice(0, 8)}…</span>
-                    <span className={`ml-2 px-2 py-0.5 rounded text-sm ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
-                    {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
-                      <span className="ml-2 text-amber-400 text-xs">(different version)</span>
-                    )}
+              <li key={j.job_id} className="py-4 first:pt-0">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>{j.job_id.slice(0, 8)}…</code>
+                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
+                      {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
+                        <span className="text-amber-400 text-xs">(different version)</span>
+                      )}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-dk-5/80">
+                      <span>Created {new Date(j.created_at).toLocaleString()}</span>
+                      {j.brickgen_version && <span>BrickGen {j.brickgen_version}</span>}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {j.status === 'completed' && j.output_file && (
@@ -392,6 +446,14 @@ function ProjectDetailPage() {
                     <div className="w-full bg-dk-3 rounded-full h-1.5">
                       <div className="bg-mint h-1.5 rounded-full transition-all" style={{ width: `${j.progress}%` }} />
                     </div>
+                    {j.log && (
+                      <p className="mt-1.5 text-xs font-mono text-dk-5/90 truncate" title={j.log.trim()}>
+                        {(() => {
+                          const lines = j.log.trim().split(/\r?\n/).filter(Boolean)
+                          return lines.length ? lines[lines.length - 1] : j.log.trim()
+                        })()}
+                      </p>
+                    )}
                   </div>
                 )}
                 {j.status === 'failed' && j.error_message && (

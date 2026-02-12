@@ -56,7 +56,7 @@ export async function apiFetch(...args) {
   const response = await fetch(...args)
   if (!response.ok && setApiErrorRef) {
     try {
-      const error = await parseApiError(response)
+      const error = await parseApiError(response.clone())
       setApiErrorRef(error)
     } catch (e) {
       setApiErrorRef({

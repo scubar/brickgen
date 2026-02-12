@@ -19,8 +19,20 @@ function SetDetailPage() {
   const [autoGeneratePartPreviews, setAutoGeneratePartPreviews] = useState(true)
   const [partsPage, setPartsPage] = useState(1)
   const [expandedPreview, setExpandedPreview] = useState(null)
+  const [projectsForSet, setProjectsForSet] = useState([])
+  const [loadingProjects, setLoadingProjects] = useState(true)
+  const [deletingProjectId, setDeletingProjectId] = useState(null)
 
   const PARTS_PAGE_SIZE = 5
+
+  function sameSetNum(setNumFromUrl, projectSetNum) {
+    if (!setNumFromUrl || !projectSetNum) return false
+    if (setNumFromUrl === projectSetNum) return true
+    if (setNumFromUrl.endsWith('-1') && setNumFromUrl.slice(0, -2) === projectSetNum) return true
+    if (projectSetNum.endsWith('-1') && projectSetNum.slice(0, -2) === setNumFromUrl) return true
+    if (setNumFromUrl + '-1' === projectSetNum) return true
+    return false
+  }
   const partsTotalPages = Math.max(1, Math.ceil(partsList.length / PARTS_PAGE_SIZE))
   const partsToShow = partsList.slice((partsPage - 1) * PARTS_PAGE_SIZE, partsPage * PARTS_PAGE_SIZE)
 
@@ -29,6 +41,21 @@ function SetDetailPage() {
     fetchPartsList()
   }, [setNum])
   useEffect(() => setPartsPage(1), [setNum, partsList.length])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingProjects(true)
+    apiFetch('/api/projects')
+      .then(r => r.ok ? r.json() : [])
+      .then(all => {
+        if (!cancelled && setNum) {
+          setProjectsForSet(all.filter(p => sameSetNum(setNum, p.set_num)))
+        }
+      })
+      .catch(() => { if (!cancelled) setProjectsForSet([]) })
+      .finally(() => { if (!cancelled) setLoadingProjects(false) })
+    return () => { cancelled = true }
+  }, [setNum])
 
   useEffect(() => {
     apiFetch('/api/settings')
@@ -84,6 +111,22 @@ function SetDetailPage() {
       setError(e.message)
     } finally {
       setCreatingProject(false)
+    }
+  }
+
+  const deleteProject = async (e, projectId) => {
+    e.stopPropagation()
+    if (!confirm('Delete this project and all its jobs and output files?')) return
+    setDeletingProjectId(projectId)
+    try {
+      const r = await apiFetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      if (r.ok) {
+        setProjectsForSet(prev => prev.filter(p => p.id !== projectId))
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setDeletingProjectId(null)
     }
   }
 
@@ -143,6 +186,47 @@ function SetDetailPage() {
               {projectDuplicateWarning && <p className="text-amber-400 text-sm mt-1">A project for this set already exists; you can still create another.</p>}
             </div>
           </div>
+        </div>
+
+        <div className="border-t border-dk-3 pt-6 mt-6">
+          <h2 className="text-2xl font-bold mb-4 text-dk-5">Projects for this set</h2>
+          {loadingProjects ? (
+            <p className="text-dk-5">Loading projects...</p>
+          ) : projectsForSet.length === 0 ? (
+            <p className="text-dk-5">No projects for this set yet. Create one above.</p>
+          ) : (
+            <div className="grid gap-4">
+              {projectsForSet.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-dk-1 rounded-lg border border-dk-3 p-4 flex items-center justify-between cursor-pointer hover:border-mint/50 transition"
+                  onClick={() => navigate(`/projects/${p.id}`)}
+                >
+                  <div className="flex items-center gap-4">
+                    {p.image_url && (
+                      <img src={p.image_url} alt="" className="w-16 h-16 object-contain bg-dk-2 rounded" />
+                    )}
+                    <div>
+                      <h3 className="font-semibold text-dk-5">{p.name}</h3>
+                      <p className="text-sm text-dk-5/80">{p.set_num} {p.set_name && ` · ${p.set_name}`}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-mint">→</span>
+                    <button
+                      type="button"
+                      onClick={(e) => deleteProject(e, p.id)}
+                      disabled={deletingProjectId === p.id}
+                      className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50"
+                      title="Delete project"
+                    >
+                      {deletingProjectId === p.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="border-t border-dk-3 pt-6">

@@ -3,13 +3,13 @@
  * 
  * @param {Array} columns - Array of column definitions: { key, label, className?, render? }
  * @param {Array} data - Array of data objects to display
- * @param {Function} getRowKey - Function to extract unique key from row (default: row => row.id)
+ * @param {Function} getRowKey - Function to extract unique key from row (default: (row, index) => row.id || index)
  * @param {String} emptyMessage - Message to display when data is empty
  */
 export default function DataTable({ 
   columns, 
   data, 
-  getRowKey = (row) => row.id,
+  getRowKey = (row, index) => row.id || index,
   emptyMessage = 'No data available'
 }) {
   if (!data || data.length === 0) {
@@ -36,8 +36,8 @@ export default function DataTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-dk-3">
-          {data.map((row) => (
-            <tr key={getRowKey(row)} className="hover:bg-dk-3/50 transition">
+          {data.map((row, index) => (
+            <tr key={getRowKey(row, index)} className="hover:bg-dk-3/50 transition">
               {columns.map((column, index) => (
                 <td
                   key={column.key || index}

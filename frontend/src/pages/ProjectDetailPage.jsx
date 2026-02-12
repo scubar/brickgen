@@ -491,7 +491,7 @@ apiFetch(`/api/jobs/${jobId}`)
                     />
                   )
                 },
-                { key: 'ldraw_id', label: 'Part', className: 'font-mono', render: (p) => p.ldraw_id || p.part_num },
+                { key: 'part_identifier', label: 'Part', className: 'font-mono', render: (p) => p.ldraw_id || p.part_num },
                 { key: 'name', label: 'Name', className: 'truncate max-w-[200px]' },
                 { key: 'quantity', label: 'Qty' },
                 { key: 'color', label: 'Color' }

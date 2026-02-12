@@ -10,7 +10,7 @@ export default function Card({ title, children, actions, className = '' }) {
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>
       )}
-      <div className={title ? 'p-4' : 'p-4'}>
+      <div className="p-4">
         {children}
       </div>
     </div>

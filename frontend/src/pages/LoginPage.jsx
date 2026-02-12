@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch } from '../api'
+import { useAuth } from '../contexts/AuthContext'
 
 function LoginPage() {
   const navigate = useNavigate()
+  const { checkAuth } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -27,10 +28,10 @@ function LoginPage() {
         const data = await response.json()
         // Store the JWT token
         localStorage.setItem('auth_token', data.access_token)
+        // Re-check authentication status
+        await checkAuth()
         // Redirect to home page
-        navigate('/')
-        // Reload to trigger auth context update
-        window.location.reload()
+        navigate('/', { replace: true })
       } else {
         const errorData = await response.json()
         setError(errorData.detail || 'Login failed')

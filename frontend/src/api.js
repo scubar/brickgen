@@ -65,12 +65,11 @@ export async function apiFetch(...args) {
 
   const response = await fetch(...args)
 
-  // If unauthorized, redirect to login
+  // If unauthorized, dispatch custom event to trigger logout
   if (response.status === 401) {
     localStorage.removeItem('auth_token')
-    if (window.location.pathname !== '/login') {
-      window.location.href = '/login'
-    }
+    // Dispatch custom event that AuthContext can listen for
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'))
   }
 
   if (!response.ok && setApiErrorRef) {

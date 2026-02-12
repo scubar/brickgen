@@ -57,9 +57,16 @@ def verify_token(token: str) -> dict:
 
 
 def authenticate_user(username: str, password: str) -> bool:
-    """Authenticate a user against configured credentials."""
-    # In production, you might want to hash the password in the config
-    # For now, we compare directly
+    """
+    Authenticate a user against configured credentials.
+    
+    NOTE: For simplicity in this self-hosted single-user application, passwords
+    are stored in plaintext in the environment configuration. For production use
+    with multiple users or higher security requirements, consider:
+    1. Storing hashed passwords using get_password_hash()
+    2. Using a database to store user credentials
+    3. Implementing a proper user management system
+    """
     if username != settings.auth_username:
         return False
     if password != settings.auth_password:

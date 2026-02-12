@@ -11,7 +11,17 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     checkAuth()
-  }, [])
+    
+    // Listen for unauthorized events from apiFetch
+    const handleUnauthorized = () => {
+      setIsAuthenticated(false)
+      setUser(null)
+      navigate('/login', { replace: true })
+    }
+    
+    window.addEventListener('auth:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
+  }, [navigate])
 
   const checkAuth = async () => {
     const token = localStorage.getItem('auth_token')

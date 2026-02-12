@@ -272,10 +272,19 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
+  const TERMINAL_JOB_STATUSES = ['completed', 'failed']
+
   const fetchJobs = async () => {
     try {
       const r = await apiFetch(`/api/projects/${projectId}/jobs`)
-      if (r.ok) setJobs(await r.json())
+      if (!r.ok) return
+      const jobList = await r.json()
+      setJobs(jobList)
+      // If the page was refreshed while a job was running, restore activeJobId so websocket/polling reconnects
+      const runningJob = jobList.find((j) => j.status && !TERMINAL_JOB_STATUSES.includes(j.status))
+      if (runningJob) {
+        setActiveJobId(runningJob.job_id)
+      }
     } catch (e) {
       console.error(e)
     }

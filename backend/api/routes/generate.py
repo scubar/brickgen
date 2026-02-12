@@ -148,6 +148,7 @@ async def broadcast_progress_task() -> None:
             await asyncio.sleep(0)
             consecutive_errors = 0
         except asyncio.CancelledError:
+            logger.debug("WebSocket broadcast task received cancellation")
             raise
         except Exception as e:
             consecutive_errors += 1

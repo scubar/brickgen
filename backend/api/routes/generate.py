@@ -37,6 +37,10 @@ _running_job_id: Optional[str] = None
 _ws_subscribers: Dict[str, List[Any]] = {}
 _progress_queue: queue.Queue = queue.Queue(maxsize=1000)
 
+# Circuit breaker for broadcast task: max consecutive errors before terminating
+_BROADCAST_MAX_CONSECUTIVE_ERRORS = 10
+_BROADCAST_ERROR_DELAY_SECONDS = 1.0
+
 
 def is_any_job_running() -> bool:
     """Return True if a generation job is currently running (slot claimed)."""
@@ -125,27 +129,47 @@ def _remove_job_progress(job_id: str) -> None:
 
 
 async def broadcast_progress_task() -> None:
-    """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
-    loop = asyncio.get_running_loop()
+    """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job.
+    
+    Implements a circuit breaker pattern: after _BROADCAST_MAX_CONSECUTIVE_ERRORS consecutive
+    exceptions in message processing, the task terminates. The error counter resets after each
+    successful message broadcast (i.e., after queue.get_nowait() succeeds and all WebSocket
+    sends complete without raising to the outer except block).
+    """
+    consecutive_errors = 0
+    
     while True:
         try:
-            # Use blocking get with timeout in a thread executor to avoid tight polling on the event loop.
-            job_id, payload = await loop.run_in_executor(
-                None, _progress_queue.get, True, 1.0  # block=True, timeout=1.0
-            )
-        except queue.Empty:
-            # Timeout without new items; yield control and continue waiting.
-            await asyncio.sleep(0)
-            continue
-        for ws in list(_ws_subscribers.get(job_id, [])):
             try:
-                await ws.send_json(payload)
-            except Exception:
+                job_id, payload = _progress_queue.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.05)
+                continue
+            for ws in list(_ws_subscribers.get(job_id, [])):
                 try:
-                    _ws_subscribers[job_id].remove(ws)
-                except (KeyError, ValueError):
-                    pass
-        await asyncio.sleep(0)
+                    await ws.send_json(payload)
+                except Exception:
+                    try:
+                        _ws_subscribers[job_id].remove(ws)
+                    except (KeyError, ValueError):
+                        pass
+            await asyncio.sleep(0)
+            consecutive_errors = 0
+        except asyncio.CancelledError:
+            logger.debug("WebSocket broadcast task received cancellation")
+            raise
+        except Exception as e:
+            consecutive_errors += 1
+            logger.error(
+                f"Unexpected error in WebSocket broadcast task (error {consecutive_errors}/{_BROADCAST_MAX_CONSECUTIVE_ERRORS}): {e}",
+                exc_info=True
+            )
+            if consecutive_errors >= _BROADCAST_MAX_CONSECUTIVE_ERRORS:
+                logger.critical(
+                    f"WebSocket broadcast task encountered {_BROADCAST_MAX_CONSECUTIVE_ERRORS} consecutive errors. Terminating task."
+                )
+                raise
+            await asyncio.sleep(_BROADCAST_ERROR_DELAY_SECONDS)
 
 
 def start_generation_thread(

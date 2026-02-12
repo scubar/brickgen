@@ -111,7 +111,7 @@ def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Op
     try:
         _progress_queue.put_nowait((job_id, payload))
     except queue.Full:
-        logger.warning(f"Progress queue is full (maxsize=1000), dropping update for job {job_id}. "
+        logger.warning(f"Progress queue is full (maxsize={_progress_queue.maxsize}), dropping update for job {job_id}. "
                       "This may indicate broadcast_progress_task has fallen behind.")
 
 

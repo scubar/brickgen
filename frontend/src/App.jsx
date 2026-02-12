@@ -7,6 +7,7 @@ import SettingsPage from './pages/SettingsPage'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import AttributionsPage from './pages/AttributionsPage'
+import DocumentationPage from './pages/DocumentationPage'
 function App() {
   return (
     <Router>
@@ -22,6 +23,7 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/cache" element={<SettingsPage />} />
             <Route path="/settings/database" element={<SettingsPage />} />
+            <Route path="/guide" element={<DocumentationPage />} />
             <Route path="/attributions" element={<AttributionsPage />} />
           </Routes>
           </ApiErrorProvider>

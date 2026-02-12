@@ -20,9 +20,42 @@ function SearchPage() {
   const [suggestions, setSuggestions] = useState([])
   const [showSuggest, setShowSuggest] = useState(false)
   const suggestRef = useRef(null)
+  const [cachedSets, setCachedSets] = useState([])
+  const [projects, setProjects] = useState([])
+  const [loadingCached, setLoadingCached] = useState(true)
+  const [loadingProjects, setLoadingProjects] = useState(true)
 
   useEffect(() => {
     fetchHistory()
+  }, [])
+
+  const fetchCachedSets = async () => {
+    setLoadingCached(true)
+    try {
+      const r = await apiFetch('/api/cache/rebrickable/random?limit=4')
+      if (r.ok) setCachedSets(await r.json())
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoadingCached(false)
+    }
+  }
+
+  const fetchProjects = async () => {
+    setLoadingProjects(true)
+    try {
+      const r = await apiFetch('/api/projects')
+      if (r.ok) setProjects(await r.json())
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoadingProjects(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchCachedSets()
+    fetchProjects()
   }, [])
 
   useEffect(() => {
@@ -176,40 +209,121 @@ function SearchPage() {
 
       {results.length > 0 && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {results.map((set) => (
-              <div
-                key={set.set_num}
-                onClick={() => navigate(`/set/${set.set_num}`, { state: { searchQuery: query, searchPage: page, pageSize } })}
-                className="bg-dk-2 border border-dk-3 rounded-lg overflow-hidden cursor-pointer hover:border-mint/50 transition"
-              >
-                {set.image_url && <img src={set.image_url} alt={set.name} className="w-full h-48 object-contain bg-dk-1 p-4" />}
-                <div className="p-4">
-                  <h3 className="font-bold text-lg mb-1 text-dk-5">{set.name}</h3>
-                  <p className="text-sm text-dk-5/80 mb-2">Set #{set.set_num}</p>
-                  {set.year && <p className="text-sm text-dk-5/70">Year: {set.year}</p>}
-                  {set.pieces && <p className="text-sm text-dk-5/70">Pieces: {set.pieces}</p>}
-                  {set.theme && <p className="text-sm text-dk-5/70">Theme: {set.theme}</p>}
+          <div className="bg-dk-2 border border-dk-3 rounded-lg p-6 mb-8">
+            <h2 className="text-xl font-bold mb-4 text-dk-5">Search results</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {results.map((set) => (
+                <div
+                  key={set.set_num}
+                  onClick={() => navigate(`/set/${set.set_num}`, { state: { searchQuery: query, searchPage: page, pageSize } })}
+                  className="bg-dk-1 border border-dk-3 rounded-lg overflow-hidden cursor-pointer hover:border-mint/50 transition"
+                >
+                  {set.image_url && <img src={set.image_url} alt={set.name} className="w-full h-36 object-contain bg-dk-2 p-3" />}
+                  <div className="p-3">
+                    <h3 className="font-bold text-sm mb-1 text-dk-5 truncate" title={set.name}>{set.name}</h3>
+                    <p className="text-xs text-dk-5/80">Set #{set.set_num}</p>
+                    {(set.year != null || set.pieces != null) && (
+                      <p className="text-xs text-dk-5/70 mt-1">
+                        {[set.year != null && `Year: ${set.year}`, set.pieces != null && `${set.pieces} pcs`].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-dk-5">
-            <div className="flex items-center gap-2 text-sm">
-              <span>Items per page:</span>
-              <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); handleSearch(null, 1) }} className="border border-dk-3 rounded px-2 py-1 bg-dk-1 text-dk-5">
-                {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
+              ))}
             </div>
-            {(nextPage != null || prevPage != null) && (
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-dk-5 text-sm">
               <div className="flex items-center gap-2">
-                <button type="button" disabled={prevPage == null} onClick={() => handleSearch(null, prevPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Previous</button>
-                <span className="text-sm">Page {page} of {Math.max(1, Math.ceil(count / pageSize))} ({count} total)</span>
-                <button type="button" disabled={nextPage == null} onClick={() => handleSearch(null, nextPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Next</button>
+                <span>Items per page:</span>
+                <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); handleSearch(null, 1) }} className="border border-dk-3 rounded px-2 py-1 bg-dk-1 text-dk-5">
+                  {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
               </div>
-            )}
+              {(nextPage != null || prevPage != null) && (
+                <div className="flex items-center gap-2">
+                  <button type="button" disabled={prevPage == null} onClick={() => handleSearch(null, prevPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Previous</button>
+                  <span>Page {page} of {Math.max(1, Math.ceil(count / pageSize))} ({count} total)</span>
+                  <button type="button" disabled={nextPage == null} onClick={() => handleSearch(null, nextPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Next</button>
+                </div>
+              )}
+            </div>
           </div>
         </>
+      )}
+
+      {(loadingProjects || projects.length > 0) && (
+        <div className="bg-dk-2 border border-dk-3 rounded-lg p-6 mb-8">
+          <h2 className="text-xl font-bold mb-4 text-dk-5">Recent Projects</h2>
+          {loadingProjects ? (
+            <p className="text-dk-5/80">Loading projects…</p>
+          ) : projects.length === 0 ? (
+            <p className="text-dk-5/80">No projects yet. Open a set and create a project to get started.</p>
+          ) : (
+            <div className="grid gap-3">
+              {projects.slice(0, 3).map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => navigate(`/projects/${p.id}`)}
+                  className="bg-dk-1 border border-dk-3 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:border-mint/50 transition"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {p.image_url && (
+                      <img src={p.image_url} alt="" className="w-12 h-12 object-contain bg-dk-2 rounded flex-shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-dk-5 truncate">{p.name}</h3>
+                      <p className="text-xs text-dk-5/80">{p.set_num}{p.set_name ? ` · ${p.set_name}` : ''}</p>
+                    </div>
+                  </div>
+                  <span className="text-mint flex-shrink-0">→</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(loadingCached || cachedSets.length > 0) && results.length === 0 && (
+        <div className="bg-dk-2 border border-dk-3 rounded-lg p-6 mb-8">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <h2 className="text-xl font-bold text-dk-5">Cached Sets (Random)</h2>
+            <button
+              type="button"
+              onClick={fetchCachedSets}
+              disabled={loadingCached}
+              className="px-3 py-1.5 text-sm border border-dk-3 rounded-lg bg-dk-1 text-dk-5 hover:bg-dk-3 hover:border-dk-4 transition disabled:opacity-50"
+              title="Refresh cached sets"
+            >
+              {loadingCached ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+          {loadingCached ? (
+            <p className="text-dk-5/80">Loading cached sets…</p>
+          ) : cachedSets.length === 0 ? (
+            <p className="text-dk-5/80">No cached sets yet. Search for a set to cache it.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {cachedSets.map((set) => (
+                <div
+                  key={set.set_num}
+                  onClick={() => navigate(`/set/${set.set_num}`)}
+                  className="bg-dk-1 border border-dk-3 rounded-lg overflow-hidden cursor-pointer hover:border-mint/50 transition"
+                >
+                  {set.image_url && <img src={set.image_url} alt={set.name} className="w-full h-36 object-contain bg-dk-2 p-3" />}
+                  <div className="p-3 relative">
+                    <span className="absolute top-2 right-2 px-2 py-0.5 text-xs font-medium bg-mint/20 text-mint rounded border border-mint/40">Cached</span>
+                    <h3 className="font-bold text-sm mb-1 text-dk-5 pr-16 truncate" title={set.name}>{set.name}</h3>
+                    <p className="text-xs text-dk-5/80">Set #{set.set_num}</p>
+                    {(set.year != null || set.pieces != null) && (
+                      <p className="text-xs text-dk-5/70 mt-1">
+                        {[set.year != null && `Year: ${set.year}`, set.pieces != null && `${set.pieces} pcs`].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {!loading && results.length === 0 && query && (

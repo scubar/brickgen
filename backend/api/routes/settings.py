@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 from backend.models.schemas import (
     SettingsResponse,
@@ -327,6 +327,8 @@ class CachedSetSummary(BaseModel):
     name: str
     cached_at: str  # updated_at ISO format
     image_url: Optional[str] = None
+    year: Optional[int] = None
+    pieces: Optional[int] = None
 
 
 class RebrickableCacheList(BaseModel):
@@ -343,9 +345,9 @@ class RebrickableCacheList(BaseModel):
 async def list_cached_sets(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page")
+    page_size: int = Query(10, ge=1, le=100, description="Items per page (pagination after this many)")
 ):
-    """List cached sets (Rebrickable cache) with set_num, name, cached_at. Paginated."""
+    """List cached sets (Rebrickable cache) with set_num, name, cached_at. Paginated (default 10 per page)."""
     import json as _json
     prefix = "rebrickable:set:"
     q = db.query(ApiCache).filter(ApiCache.key.like(f"{prefix}%")).order_by(ApiCache.updated_at.desc())
@@ -360,14 +362,18 @@ async def list_cached_sets(
             data = _json.loads(r.value) if isinstance(r.value, str) else r.value
             name = (data.get("name") or "")
             image_url = data.get("image_url")
+            year = data.get("year")
+            pieces = data.get("pieces")
         except (TypeError, ValueError):
             name = ""
-            image_url = None
+            image_url = year = pieces = None
         results.append(CachedSetSummary(
             set_num=set_num,
             name=name,
             cached_at=r.updated_at.isoformat() if r.updated_at else "",
             image_url=image_url,
+            year=year,
+            pieces=pieces,
         ))
     return RebrickableCacheList(
         results=results,
@@ -377,6 +383,44 @@ async def list_cached_sets(
         next=page + 1 if page < total_pages else None,
         previous=page - 1 if page > 1 else None,
     )
+
+
+@router.get("/cache/rebrickable/random", response_model=List[CachedSetSummary])
+async def list_random_cached_sets(
+    db: Session = Depends(get_db),
+    limit: int = Query(15, ge=1, le=50, description="Number of random cached sets to return (configurable)"),
+):
+    """Return a random sample of cached sets. For display on the main Search page."""
+    import json as _json
+    prefix = "rebrickable:set:"
+    q = (
+        db.query(ApiCache)
+        .filter(ApiCache.key.like(f"{prefix}%"))
+        .order_by(func.random())
+        .limit(limit)
+    )
+    rows = q.all()
+    results = []
+    for r in rows:
+        set_num = r.key[len(prefix):] if r.key.startswith(prefix) else r.key
+        try:
+            data = _json.loads(r.value) if isinstance(r.value, str) else r.value
+            name = (data.get("name") or "")
+            image_url = data.get("image_url")
+            year = data.get("year")
+            pieces = data.get("pieces")
+        except (TypeError, ValueError):
+            name = ""
+            image_url = year = pieces = None
+        results.append(CachedSetSummary(
+            set_num=set_num,
+            name=name,
+            cached_at=r.updated_at.isoformat() if r.updated_at else "",
+            image_url=image_url,
+            year=year,
+            pieces=pieces,
+        ))
+    return results
 
 
 @router.delete("/cache/rebrickable")

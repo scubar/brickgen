@@ -13,7 +13,7 @@ export default function CacheManagementContent() {
   const [cachedSets, setCachedSets] = useState([])
   const [rebrickableCount, setRebrickableCount] = useState(0)
   const [rebrickablePage, setRebrickablePage] = useState(1)
-  const [rebrickablePageSize, setRebrickablePageSize] = useState(20)
+  const [rebrickablePageSize, setRebrickablePageSize] = useState(10)
   const [rebrickableNext, setRebrickableNext] = useState(null)
   const [rebrickablePrev, setRebrickablePrev] = useState(null)
   const [clearingRebrickable, setClearingRebrickable] = useState(false)

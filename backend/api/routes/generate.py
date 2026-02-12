@@ -128,7 +128,13 @@ def _remove_job_progress(job_id: str) -> None:
 
 
 async def broadcast_progress_task() -> None:
-    """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
+    """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job.
+    
+    Implements a circuit breaker pattern: after _BROADCAST_MAX_CONSECUTIVE_ERRORS consecutive
+    exceptions in message processing, the task terminates. The error counter resets after each
+    successful message broadcast (i.e., after queue.get_nowait() succeeds and all WebSocket
+    sends complete without raising to the outer except block).
+    """
     consecutive_errors = 0
     
     while True:

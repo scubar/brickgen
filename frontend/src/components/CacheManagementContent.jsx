@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { apiFetch } from '../api'
 import CacheSection from './CacheSection'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
@@ -29,14 +30,14 @@ export default function CacheManagementContent() {
 
   const fetchCacheStats = async () => {
     try {
-      const r = await fetch('/api/cache/stats')
+      const r = await apiFetch('/api/cache/stats')
       if (r.ok) setCacheStats(await r.json())
     } catch (e) { console.error(e) }
   }
   const fetchCachedSets = async (page = 1, pageSize = null) => {
     const size = pageSize ?? rebrickablePageSize
     try {
-      const r = await fetch(`/api/cache/rebrickable?page=${page}&page_size=${size}`)
+      const r = await apiFetch(`/api/cache/rebrickable?page=${page}&page_size=${size}`)
       if (r.ok) {
         const d = await r.json()
         setCachedSets(d.results)
@@ -50,13 +51,13 @@ export default function CacheManagementContent() {
   }
   const fetchLdrawStats = async () => {
     try {
-      const r = await fetch('/api/ldraw/stats')
+      const r = await apiFetch('/api/ldraw/stats')
       if (r.ok) setLdrawStats(await r.json())
     } catch (e) { console.error(e) }
   }
   const fetchPreviewList = async () => {
     try {
-      const r = await fetch('/api/parts/preview-cache/list')
+      const r = await apiFetch('/api/parts/preview-cache/list')
       if (r.ok) {
         const d = await r.json()
         setPreviewList(d.items || [])
@@ -65,7 +66,7 @@ export default function CacheManagementContent() {
   }
   const fetchSearchHistory = async () => {
     try {
-      const r = await fetch('/api/search/history?limit=100')
+      const r = await apiFetch('/api/search/history?limit=100')
       if (r.ok) setSearchHistory(await r.json())
     } catch (e) { console.error(e) }
   }
@@ -91,7 +92,7 @@ export default function CacheManagementContent() {
     setClearingRebrickable(true)
     setMessage(null)
     try {
-      const r = await fetch(url, { method: 'DELETE' })
+      const r = await apiFetch(url, { method: 'DELETE' })
       const data = await r.json()
       setMessage({ type: 'success', text: data.message })
       await fetchCachedSets(1)
@@ -118,7 +119,7 @@ export default function CacheManagementContent() {
                 <div><p className="text-dk-5/80 font-medium">Total size</p><p className="text-2xl font-bold text-dk-5">{cacheStats.total_size_mb.toFixed(2)} MB</p></div>
               </div>
               <p className="text-xs text-dk-5/80">Directory: {cacheStats.cache_dir}</p>
-              <button onClick={async () => { if (!confirm('Clear all cached STL files?')) return; setClearingCache(true); try { const r = await fetch('/api/cache/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchCacheStats(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingCache(false); } }} disabled={clearingCache} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingCache ? 'Clearing...' : 'Clear STL cache'}</button>
+              <button onClick={async () => { if (!confirm('Clear all cached STL files?')) return; setClearingCache(true); try { const r = await apiFetch('/api/cache/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchCacheStats(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingCache(false); } }} disabled={clearingCache} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingCache ? 'Clearing...' : 'Clear STL cache'}</button>
             </div>
           )}
         </CacheSection>
@@ -180,7 +181,7 @@ export default function CacheManagementContent() {
               )
             })()}
             <p className="text-sm text-dk-5/80">{previewList.length} cached preview(s)</p>
-            <button onClick={async () => { if (!confirm('Clear all part preview images?')) return; setClearingPreviewCache(true); setPreviewPage(1); try { const r = await fetch('/api/parts/preview-cache', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchPreviewList(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingPreviewCache(false); } }} disabled={clearingPreviewCache} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingPreviewCache ? 'Clearing...' : 'Clear preview cache'}</button>
+            <button onClick={async () => { if (!confirm('Clear all part preview images?')) return; setClearingPreviewCache(true); setPreviewPage(1); try { const r = await apiFetch('/api/parts/preview-cache', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchPreviewList(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingPreviewCache(false); } }} disabled={clearingPreviewCache} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingPreviewCache ? 'Clearing...' : 'Clear preview cache'}</button>
           </div>
         </CacheSection>
         <CacheSection id="ldraw-cache" title="LDraw library" description="LDraw parts library on disk. Download on demand or clear to re-download on next generation." thumbnailAlt="LDraw">
@@ -198,8 +199,8 @@ export default function CacheManagementContent() {
                 {ldrawStats.exists && <div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-dk-5/80 font-medium">Part files</p><p className="text-xl font-bold text-dk-5">{ldrawStats.part_count?.toLocaleString() ?? '—'}</p></div><div><p className="text-dk-5/80 font-medium">Size</p><p className="text-xl font-bold text-dk-5">{ldrawStats.total_size_mb?.toFixed(2) ?? '—'} MB</p></div><div className="col-span-2"><p className="text-dk-5/80 font-medium">Version</p><p className="text-xl font-bold text-dk-5">{ldrawStats.version ?? '—'}</p></div></div>}
                 <p className="text-xs text-dk-5">Path: {ldrawStats.library_path}</p>
                 <div className="flex flex-col gap-2">
-                  <button onClick={async () => { setDownloadingLdraw(true); setMessage(null); try { const r = await fetch('/api/ldraw/download', { method: 'POST' }); const d = await r.json(); if (!r.ok) throw new Error(d.detail || d.message || 'Download failed'); setMessage({ type: 'success', text: d.message }); await fetchLdrawStats(); } catch (e) { setMessage({ type: 'error', text: e.message || 'Download failed' }); } finally { setDownloadingLdraw(false); } }} disabled={downloadingLdraw || ldrawStats?.exists} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{downloadingLdraw ? 'Downloading...' : ldrawStats?.exists ? 'Already downloaded' : 'Download LDraw library'}</button>
-                  <button onClick={async () => { if (!confirm('Clear LDraw library? It will be re-downloaded on next generation.')) return; setClearingLdraw(true); try { const r = await fetch('/api/ldraw/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchLdrawStats(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingLdraw(false); } }} disabled={clearingLdraw || downloadingLdraw || !ldrawStats?.exists} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingLdraw ? 'Clearing...' : 'Clear LDraw library'}</button>
+                  <button onClick={async () => { setDownloadingLdraw(true); setMessage(null); try { const r = await apiFetch('/api/ldraw/download', { method: 'POST' }); const d = await r.json(); if (!r.ok) throw new Error(d.detail || d.message || 'Download failed'); setMessage({ type: 'success', text: d.message }); await fetchLdrawStats(); } catch (e) { setMessage({ type: 'error', text: e.message || 'Download failed' }); } finally { setDownloadingLdraw(false); } }} disabled={downloadingLdraw || ldrawStats?.exists} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{downloadingLdraw ? 'Downloading...' : ldrawStats?.exists ? 'Already downloaded' : 'Download LDraw library'}</button>
+                  <button onClick={async () => { if (!confirm('Clear LDraw library? It will be re-downloaded on next generation.')) return; setClearingLdraw(true); try { const r = await apiFetch('/api/ldraw/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); fetchLdrawStats(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingLdraw(false); } }} disabled={clearingLdraw || downloadingLdraw || !ldrawStats?.exists} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingLdraw ? 'Clearing...' : 'Clear LDraw library'}</button>
                 </div>
               </>
             )}
@@ -227,7 +228,7 @@ export default function CacheManagementContent() {
                 </>
               )
             })() : <p className="text-dk-5/80">No search history.</p>}
-            <button onClick={async () => { if (!confirm('Clear all search history?')) return; setClearingSearchHistory(true); try { const r = await fetch('/api/search/history/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); await fetchSearchHistory(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingSearchHistory(false); setSearchHistoryPage(1); } }} disabled={clearingSearchHistory || searchHistory.length === 0} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingSearchHistory ? 'Clearing...' : 'Clear all search history'}</button>
+            <button onClick={async () => { if (!confirm('Clear all search history?')) return; setClearingSearchHistory(true); try { const r = await apiFetch('/api/search/history/clear', { method: 'DELETE' }); const d = await r.json(); setMessage({ type: 'success', text: d.message }); await fetchSearchHistory(); } catch (e) { setMessage({ type: 'error', text: e.message }); } finally { setClearingSearchHistory(false); setSearchHistoryPage(1); } }} disabled={clearingSearchHistory || searchHistory.length === 0} className="w-full px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50">{clearingSearchHistory ? 'Clearing...' : 'Clear all search history'}</button>
           </div>
         </CacheSection>
       </div>

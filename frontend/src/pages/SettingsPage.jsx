@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { apiFetch } from '../api'
 import CacheManagementContent from '../components/CacheManagementContent'
 
 function SettingsPage() {
@@ -78,7 +79,7 @@ function SettingsPage() {
   const fetchDatabaseInfo = async () => {
     setDatabaseInfoLoading(true)
     try {
-      const response = await fetch('/api/settings/database')
+      const response = await apiFetch('/api/settings/database')
       if (response.ok) {
         const data = await response.json()
         setDatabaseInfo(data)
@@ -99,7 +100,7 @@ function SettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const response = await fetch('/api/settings')
+      const response = await apiFetch('/api/settings')
       if (response.ok) {
         const data = await response.json()
         const scale = parseFloat(data.stl_scale_factor) || 1.0
@@ -132,7 +133,7 @@ function SettingsPage() {
     setMessage(null)
 
     try {
-      const response = await fetch('/api/settings', {
+      const response = await apiFetch('/api/settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -179,7 +180,7 @@ function SettingsPage() {
     setMessage(null)
 
     try {
-      const response = await fetch('/api/settings/api-key', {
+      const response = await apiFetch('/api/settings/api-key', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

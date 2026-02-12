@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../api'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
@@ -30,6 +31,7 @@ function ProjectDetailPage() {
   const [partsPage, setPartsPage] = useState(1)
   const [colorRefPage, setColorRefPage] = useState(1)
   const [deletingJobId, setDeletingJobId] = useState(null)
+  const [cancellingJobId, setCancellingJobId] = useState(null)
   const WIZARD_PARTS_PAGE_SIZE = 5
   const PARTS_PAGE_SIZE = 5
   const COLOR_REF_PAGE_SIZE = 20
@@ -64,7 +66,7 @@ function ProjectDetailPage() {
 
   useEffect(() => {
     if (project?.set_num) {
-      fetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`)
+      apiFetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`)
         .then((r) => r.ok ? r.json() : [])
         .then(setPartsList)
         .catch(() => setPartsList([]))
@@ -85,56 +87,174 @@ function ProjectDetailPage() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/api/jobs/${encodeURIComponent(jobId)}/ws`
     let ws = null
-    try {
-      ws = new WebSocket(wsUrl)
-      ws.onmessage = (event) => {
-        try {
-          const p = JSON.parse(event.data)
-          setJobs(prev => {
-            const idx = prev.findIndex(job => job.job_id === jobId)
-            const updated = { status: p.status, progress: p.progress, error_message: p.error_message ?? null, log: p.log ?? null }
-            if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
-            return [{ job_id: jobId, set_num: '', ...updated, output_file: null, brickgen_version: null, created_at: '', updated_at: '' }, ...prev]
+    let reconnectAttempts = 0
+    let reconnectTimer = null
+    let pollingTimer = null
+    let shouldReconnect = true
+    const MAX_RECONNECT_ATTEMPTS = 5
+    const INITIAL_BACKOFF_MS = 1000
+    const MAX_BACKOFF_MS = 16000
+    const POLLING_INTERVAL_MS = 2000
+
+    const calculateBackoff = (attemptNumber) => {
+      return Math.min(INITIAL_BACKOFF_MS * Math.pow(2, attemptNumber - 1), MAX_BACKOFF_MS)
+    }
+
+    const createPlaceholderJob = (jobId, statusData) => {
+      const nowIso = new Date().toISOString()
+      return {
+        job_id: jobId,
+        set_num: '',
+        status: statusData.status,
+        progress: statusData.progressValue,
+        error_message: statusData.error_message ?? null,
+        log: statusData.log ?? null,
+        output_file: null,
+        brickgen_version: null,
+        created_at: nowIso,
+        updated_at: nowIso
+      }
+    }
+
+    const updateJobProgress = (progress) => {
+      const { status, progress: progressValue, error_message, log } = progress
+      setJobs(prev => {
+        const idx = prev.findIndex(job => job.job_id === jobId)
+        const updated = { status, progress: progressValue, error_message: error_message ?? null, log: log ?? null }
+        if (idx >= 0) return prev.map((job, i) => (i === idx ? { ...job, ...updated } : job))
+        // Create a placeholder job entry for jobs not yet in the list
+        return [createPlaceholderJob(jobId, { status, progressValue, error_message, log }), ...prev]
+      })
+    }
+
+    const checkJobCompletion = (status) => {
+      if (status === 'completed' || status === 'failed') {
+        shouldReconnect = false
+        setActiveJobId(null)
+        ws?.close()
+        clearTimeout(reconnectTimer)
+        clearInterval(pollingTimer)
+apiFetch(`/api/jobs/${jobId}`)
+        .then((r) => r.ok ? r.json() : null)
+          .then((j) => {
+            if (j) setJobs(prev => prev.map(job => job.job_id === jobId ? { ...job, ...j, job_id: j.job_id ?? jobId } : job))
           })
-          if (p.status === 'completed' || p.status === 'failed') {
-            setActiveJobId(null)
-            ws?.close()
-            fetch(`/api/jobs/${jobId}`)
-              .then((r) => r.ok ? r.json() : null)
-              .then((j) => {
-                if (j) setJobs(prev => prev.map(job => job.job_id === jobId ? { ...job, ...j, job_id: j.job_id ?? jobId } : job))
-              })
-              .finally(fetchJobs)
+          .finally(fetchJobs)
+      }
+    }
+
+    const startPolling = () => {
+      if (pollingTimer) return
+      console.log(`Starting polling fallback for job ${jobId}`)
+      pollingTimer = setInterval(async () => {
+        if (activeJobIdRef.current !== jobId) {
+          clearInterval(pollingTimer)
+          return
+        }
+        try {
+          const r = await apiFetch(`/api/jobs/${jobId}/progress`)
+          if (r.ok) {
+            const p = await r.json()
+            updateJobProgress(p)
+            checkJobCompletion(p.status)
+          } else if (r.status === 404) {
+            // Job no longer in progress, check final status
+            const fullJob = await apiFetch(`/api/jobs/${jobId}`)
+            if (fullJob.ok) {
+              const j = await fullJob.json()
+              updateJobProgress(j)
+              checkJobCompletion(j.status)
+            }
           }
         } catch (e) {
-          console.error(e)
+          console.error('Polling error:', e)
         }
-      }
-      ws.onclose = () => {
-        if (activeJobIdRef.current === jobId) {
-          setActiveJobId(null)
-          fetchJobs()
-        }
-      }
-      ws.onerror = () => {
-        if (activeJobIdRef.current === jobId) {
-          setActiveJobId(null)
-          fetchJobs()
-        }
-      }
-    } catch (e) {
-      console.error(e)
-      setActiveJobId(null)
-      fetchJobs()
+      }, POLLING_INTERVAL_MS)
     }
+
+    const connectWebSocket = () => {
+      try {
+        ws = new WebSocket(wsUrl)
+        
+        ws.onopen = () => {
+          console.log(`WebSocket connected for job ${jobId}`)
+          reconnectAttempts = 0
+          if (pollingTimer) {
+            clearInterval(pollingTimer)
+            pollingTimer = null
+          }
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const p = JSON.parse(event.data)
+            updateJobProgress(p)
+            checkJobCompletion(p.status)
+          } catch (e) {
+            console.error(e)
+          }
+        }
+
+        ws.onclose = () => {
+          if (!shouldReconnect || activeJobIdRef.current !== jobId) {
+            return
+          }
+          
+          // Check if job is still running before reconnecting
+          apiFetch(`/api/jobs/${jobId}/progress`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((p) => {
+              if (p && (p.status === 'processing' || p.status === 'pending')) {
+                // Job still running, attempt reconnect
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                  reconnectAttempts++
+                  const backoffMs = calculateBackoff(reconnectAttempts)
+                  console.log(`WebSocket closed, reconnecting in ${backoffMs}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
+                  reconnectTimer = setTimeout(connectWebSocket, backoffMs)
+                } else {
+                  console.log(`Max reconnection attempts reached, falling back to polling`)
+                  startPolling()
+                }
+              } else {
+                // Job completed or not found, fetch final state
+                fetchJobs()
+              }
+            })
+            .catch(() => {
+              // Error fetching progress, try reconnecting or polling
+              if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++
+                const backoffMs = calculateBackoff(reconnectAttempts)
+                reconnectTimer = setTimeout(connectWebSocket, backoffMs)
+              } else {
+                startPolling()
+              }
+            })
+        }
+
+        ws.onerror = () => {
+          console.error('WebSocket error')
+        }
+      } catch (e) {
+        console.error('WebSocket creation error:', e)
+        // Fall back to polling immediately
+        startPolling()
+      }
+    }
+
+    connectWebSocket()
+
     return () => {
+      shouldReconnect = false
+      clearTimeout(reconnectTimer)
+      clearInterval(pollingTimer)
       if (ws && ws.readyState !== WebSocket.CLOSED) ws.close()
     }
   }, [activeJobId, projectId])
 
   const fetchVersion = async () => {
     try {
-      const r = await fetch('/api/version')
+      const r = await apiFetch('/api/version')
       if (r.ok) {
         const d = await r.json()
         setCurrentVersion(d.version)
@@ -146,7 +266,7 @@ function ProjectDetailPage() {
 
   const fetchProject = async () => {
     try {
-      const r = await fetch(`/api/projects/${projectId}`)
+      const r = await apiFetch(`/api/projects/${projectId}`)
       if (!r.ok) throw new Error('Project not found')
       setProject(await r.json())
     } catch (e) {
@@ -156,10 +276,19 @@ function ProjectDetailPage() {
     }
   }
 
+  const TERMINAL_JOB_STATUSES = ['completed', 'failed', 'cancelled']
+
   const fetchJobs = async () => {
     try {
-      const r = await fetch(`/api/projects/${projectId}/jobs`)
-      if (r.ok) setJobs(await r.json())
+      const r = await apiFetch(`/api/projects/${projectId}/jobs`)
+      if (!r.ok) return
+      const jobList = await r.json()
+      setJobs(jobList)
+      // If the page was refreshed while a job was running, restore activeJobId so websocket/polling reconnects
+      const runningJob = jobList.find((j) => j.status && !TERMINAL_JOB_STATUSES.includes(j.status))
+      if (runningJob) {
+        setActiveJobId(runningJob.job_id)
+      }
     } catch (e) {
       console.error(e)
     }
@@ -172,8 +301,8 @@ function ProjectDetailPage() {
     setWizardOpen(true)
     try {
       const [settingsRes, partsRes] = await Promise.all([
-        fetch('/api/settings'),
-        project?.set_num ? fetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`) : Promise.resolve(null)
+        apiFetch('/api/settings'),
+        project?.set_num ? apiFetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`) : Promise.resolve(null)
       ])
       if (settingsRes?.ok) {
         const s = await settingsRes.json()
@@ -221,7 +350,7 @@ function ProjectDetailPage() {
   const createJob = async () => {
     setCreatingJob(true)
     try {
-      const r = await fetch(`/api/projects/${projectId}/jobs`, {
+      const r = await apiFetch(`/api/projects/${projectId}/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -235,7 +364,7 @@ function ProjectDetailPage() {
           scale_factor: (scaleFactor != null && scaleFactor > 0) ? Number(scaleFactor) : (parseFloat(wizardGlobalSettings?.stl_scale_factor) || 1.0)
         })
       })
-      if (!r.ok) throw new Error('Failed to create job')
+      if (!r.ok) return
       const data = await r.json()
       const jobId = data.job_id
       setWizardOpen(false)
@@ -259,12 +388,11 @@ function ProjectDetailPage() {
     const warn = currentVersion && jobVersion && currentVersion !== jobVersion
     if (warn && !confirm('This job was created with a different BrickGen version. There may be issues; consider creating a new job instead. Re-run anyway?')) return
     try {
-      const r = await fetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
-      if (r.ok) {
-        const data = await r.json()
-        setActiveJobId(data.job_id ?? null)
-        await fetchJobs()
-      }
+      const r = await apiFetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
+      if (!r.ok) return
+      const data = await r.json()
+      setActiveJobId(data.job_id ?? null)
+      await fetchJobs()
     } catch (e) {
       console.error(e)
     }
@@ -273,10 +401,32 @@ function ProjectDetailPage() {
   const deleteJobFiles = async (jobId) => {
     if (!confirm('Remove this job\'s output file from disk?')) return
     try {
-      await fetch(`/api/jobs/${jobId}/files`, { method: 'DELETE' })
+      const r = await apiFetch(`/api/jobs/${jobId}/files`, { method: 'DELETE' })
+      if (!r.ok) return
       await fetchJobs()
     } catch (e) {
       console.error(e)
+    }
+  }
+
+  const cancelJob = async (jobId) => {
+    if (!confirm('Cancel this job? The slot will be freed and the job marked as cancelled.')) return
+    setCancellingJobId(jobId)
+    try {
+      const r = await apiFetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
+      if (!r.ok) return
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.job_id === jobId
+            ? { ...job, status: 'cancelled', error_message: 'Cancelled by user' }
+            : job
+        )
+      )
+      setActiveJobId((prev) => (prev === jobId ? null : prev))
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setCancellingJobId(null)
     }
   }
 
@@ -284,8 +434,9 @@ function ProjectDetailPage() {
     if (!confirm('Delete this job and its output file? This cannot be undone.')) return
     setDeletingJobId(jobId)
     try {
-      const r = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
-      if (r.ok) await fetchJobs()
+      const r = await apiFetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
+      if (!r.ok) return
+      await fetchJobs()
     } catch (e) {
       console.error(e)
     } finally {
@@ -296,7 +447,8 @@ function ProjectDetailPage() {
   const deleteProject = async () => {
     if (!confirm('Delete this project and all its jobs and output files?')) return
     try {
-      await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      const r = await apiFetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      if (!r.ok) return
       navigate('/projects')
     } catch (e) {
       console.error(e)
@@ -416,7 +568,7 @@ function ProjectDetailPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>{j.job_id.slice(0, 8)}…</code>
-                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
+                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : j.status === 'cancelled' ? 'bg-amber-500/20 text-amber-400' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
                       {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
                         <span className="text-amber-400 text-xs">(different version)</span>
                       )}
@@ -430,11 +582,17 @@ function ProjectDetailPage() {
                     {j.status === 'completed' && j.output_file && (
                       <a href={`/api/download/${j.job_id}`} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
                     )}
-                    <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
+                    {TERMINAL_JOB_STATUSES.includes(j.status) && (
+                      <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
+                    )}
                     {j.output_file && (
                       <button onClick={() => deleteJobFiles(j.job_id)} className="px-3 py-1 text-dk-5 border border-dk-3 rounded text-sm hover:bg-dk-3">Clear files</button>
                     )}
-                    <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}</button>
+                    {!TERMINAL_JOB_STATUSES.includes(j.status) ? (
+                      <button onClick={() => cancelJob(j.job_id)} disabled={cancellingJobId === j.job_id} className="px-3 py-1 text-amber-400 hover:text-amber-300 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{cancellingJobId === j.job_id ? 'Cancelling…' : 'Cancel job'}</button>
+                    ) : (
+                      <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}</button>
+                    )}
                   </div>
                 </div>
                 {(j.status === 'processing' || j.status === 'pending') && j.progress !== undefined && (

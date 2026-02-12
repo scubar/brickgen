@@ -34,8 +34,21 @@ _job_progress_lock = threading.Lock()
 _running_job_id: Optional[str] = None
 
 # WebSocket: job_id -> list of connected WebSockets. Progress updates are pushed via _progress_queue.
+# All access to _ws_subscribers is protected by the asyncio lock returned by _get_ws_lock().
 _ws_subscribers: Dict[str, List[Any]] = {}
+_ws_subscribers_lock: Optional[asyncio.Lock] = None
+_ws_subscribers_lock_guard = threading.Lock()
 _progress_queue: queue.Queue = queue.Queue(maxsize=1000)
+
+
+def _get_ws_lock() -> asyncio.Lock:
+    """Return the shared asyncio lock for _ws_subscribers. Uses a threading.Lock so that
+    concurrent first access from multiple coroutines creates only one asyncio.Lock."""
+    global _ws_subscribers_lock
+    with _ws_subscribers_lock_guard:
+        if _ws_subscribers_lock is None:
+            _ws_subscribers_lock = asyncio.Lock()
+        return _ws_subscribers_lock
 
 # Circuit breaker for broadcast task: max consecutive errors before terminating
 _BROADCAST_MAX_CONSECUTIVE_ERRORS = 10
@@ -145,14 +158,18 @@ async def broadcast_progress_task() -> None:
             except queue.Empty:
                 await asyncio.sleep(0.05)
                 continue
-            for ws in list(_ws_subscribers.get(job_id, [])):
+            async with _get_ws_lock():
+                subscribers = list(_ws_subscribers.get(job_id, []))
+            for ws in subscribers:
                 try:
                     await ws.send_json(payload)
                 except Exception:
-                    try:
-                        _ws_subscribers[job_id].remove(ws)
-                    except (KeyError, ValueError):
-                        pass
+                    async with _get_ws_lock():
+                        try:
+                            if job_id in _ws_subscribers:
+                                _ws_subscribers[job_id].remove(ws)
+                        except (KeyError, ValueError):
+                            pass
             await asyncio.sleep(0)
             consecutive_errors = 0
         except asyncio.CancelledError:
@@ -600,9 +617,10 @@ async def get_job_progress(job_id: str):
 async def websocket_job_progress(websocket: WebSocket, job_id: str):
     """Stream job progress over WebSocket. Server pushes updates when progress changes. No DB access."""
     await websocket.accept()
-    if job_id not in _ws_subscribers:
-        _ws_subscribers[job_id] = []
-    _ws_subscribers[job_id].append(websocket)
+    async with _get_ws_lock():
+        if job_id not in _ws_subscribers:
+            _ws_subscribers[job_id] = []
+        _ws_subscribers[job_id].append(websocket)
     overlay = get_job_progress_overlay(job_id)
     if overlay:
         try:
@@ -620,13 +638,14 @@ async def websocket_job_progress(websocket: WebSocket, job_id: str):
     except WebSocketDisconnect:
         pass
     finally:
-        if job_id in _ws_subscribers:
-            try:
-                _ws_subscribers[job_id].remove(websocket)
-            except ValueError:
-                pass
-            if not _ws_subscribers[job_id]:
-                del _ws_subscribers[job_id]
+        async with _get_ws_lock():
+            if job_id in _ws_subscribers:
+                try:
+                    _ws_subscribers[job_id].remove(websocket)
+                except ValueError:
+                    pass
+                if not _ws_subscribers[job_id]:
+                    del _ws_subscribers[job_id]
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatus)

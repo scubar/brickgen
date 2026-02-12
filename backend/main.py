@@ -8,8 +8,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.config import settings
 from backend.database import init_db
-from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts
+from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts, auth
 from backend.core.job_progress import broadcast_progress_task
+from backend.auth import get_current_user
 from backend.version import __version__
 
 # Configure logging (level from settings.log_level / LOG_LEVEL env)
@@ -43,12 +44,17 @@ app.add_middleware(
 )
 
 # API routes
-app.include_router(search.router, prefix=settings.api_prefix, tags=["search"])
-app.include_router(generate.router, prefix=settings.api_prefix, tags=["generate"])
-app.include_router(download.router, prefix=settings.api_prefix, tags=["download"])
-app.include_router(settings_routes.router, prefix=settings.api_prefix, tags=["settings"])
-app.include_router(projects.router, prefix=settings.api_prefix, tags=["projects"])
-app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"])
+# Auth routes (no authentication required for login)
+app.include_router(auth.router, prefix=settings.api_prefix, tags=["auth"])
+
+# Protected API routes (require authentication)
+from fastapi import Depends
+app.include_router(search.router, prefix=settings.api_prefix, tags=["search"], dependencies=[Depends(get_current_user)])
+app.include_router(generate.router, prefix=settings.api_prefix, tags=["generate"], dependencies=[Depends(get_current_user)])
+app.include_router(download.router, prefix=settings.api_prefix, tags=["download"], dependencies=[Depends(get_current_user)])
+app.include_router(settings_routes.router, prefix=settings.api_prefix, tags=["settings"], dependencies=[Depends(get_current_user)])
+app.include_router(projects.router, prefix=settings.api_prefix, tags=["projects"], dependencies=[Depends(get_current_user)])
+app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"], dependencies=[Depends(get_current_user)])
 
 @app.on_event("startup")
 async def startup_event():

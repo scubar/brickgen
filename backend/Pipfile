@@ -16,6 +16,9 @@ python-multipart = "==0.0.6"
 numpy = ">=2.0.0,<3"
 matplotlib = ">=3.7.0"
 numpy-stl = ">=3.0.0"
+pyjwt = ">=2.8.0"
+passlib = {extras = ["bcrypt"], version = ">=1.7.4"}
+python-jose = {extras = ["cryptography"], version = ">=3.3.0"}
 
 [dev-packages]
 pytest = "*"

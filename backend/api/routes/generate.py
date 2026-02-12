@@ -39,6 +39,7 @@ _progress_queue: queue.Queue = queue.Queue()
 
 # Circuit breaker for broadcast task: max consecutive errors before terminating
 _BROADCAST_MAX_CONSECUTIVE_ERRORS = 10
+_BROADCAST_ERROR_DELAY_SECONDS = 1.0
 
 
 def is_any_job_running() -> bool:
@@ -161,7 +162,7 @@ async def broadcast_progress_task() -> None:
                     f"WebSocket broadcast task encountered {_BROADCAST_MAX_CONSECUTIVE_ERRORS} consecutive errors. Terminating task."
                 )
                 raise
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(_BROADCAST_ERROR_DELAY_SECONDS)
 
 
 def start_generation_thread(

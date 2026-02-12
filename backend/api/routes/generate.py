@@ -143,10 +143,9 @@ async def broadcast_progress_task() -> None:
                         _ws_subscribers[job_id].remove(ws)
                     except (KeyError, ValueError):
                         pass
-            await asyncio.sleep(0)
             consecutive_errors = 0
+            await asyncio.sleep(0)
         except asyncio.CancelledError:
-            logger.info("WebSocket broadcast task cancelled")
             raise
         except Exception as e:
             consecutive_errors += 1

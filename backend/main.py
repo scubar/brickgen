@@ -19,6 +19,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Task reference for the WebSocket broadcast task
+_broadcast_task = None
+
 # Initialize database
 init_db()
 
@@ -49,7 +52,30 @@ app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"])
 @app.on_event("startup")
 async def startup_event():
     """Start the WebSocket progress broadcast task (drains queue from worker thread)."""
-    asyncio.create_task(generate.broadcast_progress_task())
+    global _broadcast_task
+    _broadcast_task = asyncio.create_task(generate.broadcast_progress_task())
+    
+    def task_done_callback(task):
+        """Log if the broadcast task terminates unexpectedly."""
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.info("WebSocket broadcast task was cancelled")
+        except Exception as e:
+            logger.error(f"WebSocket broadcast task failed with exception: {e}", exc_info=True)
+    
+    _broadcast_task.add_done_callback(task_done_callback)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Gracefully cancel the WebSocket broadcast task on shutdown."""
+    global _broadcast_task
+    if _broadcast_task and not _broadcast_task.done():
+        _broadcast_task.cancel()
+        try:
+            await _broadcast_task
+        except asyncio.CancelledError:
+            pass
 
 @app.get(f"{settings.api_prefix}/version")
 async def get_version():

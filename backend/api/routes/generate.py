@@ -127,19 +127,26 @@ async def broadcast_progress_task() -> None:
     """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
     while True:
         try:
-            job_id, payload = _progress_queue.get_nowait()
-        except queue.Empty:
-            await asyncio.sleep(0.05)
-            continue
-        for ws in list(_ws_subscribers.get(job_id, [])):
             try:
-                await ws.send_json(payload)
-            except Exception:
+                job_id, payload = _progress_queue.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.05)
+                continue
+            for ws in list(_ws_subscribers.get(job_id, [])):
                 try:
-                    _ws_subscribers[job_id].remove(ws)
-                except (KeyError, ValueError):
-                    pass
-        await asyncio.sleep(0)
+                    await ws.send_json(payload)
+                except Exception:
+                    try:
+                        _ws_subscribers[job_id].remove(ws)
+                    except (KeyError, ValueError):
+                        pass
+            await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            logger.info("WebSocket broadcast task cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in WebSocket broadcast task: {e}", exc_info=True)
+            await asyncio.sleep(1.0)
 
 
 def start_generation_thread(

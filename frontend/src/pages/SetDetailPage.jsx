@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
+import { Pagination } from '../components/ui'
 
 function SetDetailPage() {
   const { setNum } = useParams()
@@ -326,14 +327,13 @@ function SetDetailPage() {
                     </table>
                   </div>
                   {partsList.length > PARTS_PAGE_SIZE && (
-                    <div className="flex items-center justify-between mt-4">
-                      <span className="text-sm text-dk-5">
-                        Page {partsPage} of {partsTotalPages} ({partsList.length} parts)
-                      </span>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setPartsPage(p => Math.max(1, p - 1))} disabled={partsPage <= 1} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Previous</button>
-                        <button type="button" onClick={() => setPartsPage(p => Math.min(partsTotalPages, p + 1))} disabled={partsPage >= partsTotalPages} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
-                      </div>
+                    <div className="mt-4">
+                      <Pagination
+                        page={partsPage}
+                        totalPages={partsTotalPages}
+                        onPageChange={setPartsPage}
+                        totalCount={partsList.length}
+                      />
                     </div>
                   )}
                 </>

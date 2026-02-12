@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
+import { Pagination } from '../components/ui'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
@@ -232,18 +233,25 @@ function SearchPage() {
               ))}
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-dk-5 text-sm">
-              <div className="flex items-center gap-2">
-                <span>Items per page:</span>
-                <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); handleSearch(null, 1) }} className="border border-dk-3 rounded px-2 py-1 bg-dk-1 text-dk-5">
-                  {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
               {(nextPage != null || prevPage != null) && (
-                <div className="flex items-center gap-2">
-                  <button type="button" disabled={prevPage == null} onClick={() => handleSearch(null, prevPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Previous</button>
-                  <span>Page {page} of {Math.max(1, Math.ceil(count / pageSize))} ({count} total)</span>
-                  <button type="button" disabled={nextPage == null} onClick={() => handleSearch(null, nextPage)} className="px-4 py-2 border border-dk-3 rounded disabled:opacity-50 hover:bg-dk-3 text-dk-5">Next</button>
-                </div>
+                <Pagination
+                  page={page}
+                  totalPages={Math.max(1, Math.ceil(count / pageSize))}
+                  onPageChange={(newPage) => {
+                    if (newPage > page && nextPage != null) {
+                      handleSearch(null, nextPage)
+                    } else if (newPage < page && prevPage != null) {
+                      handleSearch(null, prevPage)
+                    }
+                  }}
+                  totalCount={count}
+                  pageSize={pageSize}
+                  pageSizeOptions={PAGE_SIZE_OPTIONS}
+                  onPageSizeChange={(newSize) => { 
+                    setPageSize(newSize)
+                    handleSearch(null, 1)
+                  }}
+                />
               )}
             </div>
           </div>

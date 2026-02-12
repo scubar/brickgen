@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
+import { Pagination } from '../components/ui'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
@@ -505,10 +506,12 @@ apiFetch(`/api/jobs/${jobId}`)
               </tbody>
             </table>
             {partsTotalPages > 1 && (
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dk-3">
-                <button type="button" onClick={() => setPartsPage((p) => Math.max(1, p - 1))} disabled={partsPage <= 1} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Previous</button>
-                <span className="text-sm text-dk-5">Page {partsPage} of {partsTotalPages}</span>
-                <button type="button" onClick={() => setPartsPage((p) => Math.min(partsTotalPages, p + 1))} disabled={partsPage >= partsTotalPages} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Next</button>
+              <div className="mt-2 pt-2 border-t border-dk-3">
+                <Pagination
+                  page={partsPage}
+                  totalPages={partsTotalPages}
+                  onPageChange={setPartsPage}
+                />
               </div>
             )}
           </div>
@@ -539,10 +542,12 @@ apiFetch(`/api/jobs/${jobId}`)
               </tbody>
             </table>
             {colorRefTotalPages > 1 && (
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dk-3">
-                <button type="button" onClick={() => setColorRefPage((p) => Math.max(1, p - 1))} disabled={colorRefPage <= 1} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Previous</button>
-                <span className="text-sm text-dk-5">Page {colorRefPage} of {colorRefTotalPages}</span>
-                <button type="button" onClick={() => setColorRefPage((p) => Math.min(colorRefTotalPages, p + 1))} disabled={colorRefPage >= colorRefTotalPages} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Next</button>
+              <div className="mt-2 pt-2 border-t border-dk-3">
+                <Pagination
+                  page={colorRefPage}
+                  totalPages={colorRefTotalPages}
+                  onPageChange={setColorRefPage}
+                />
               </div>
             )}
           </div>
@@ -757,13 +762,11 @@ apiFetch(`/api/jobs/${jobId}`)
                       )}
                     </div>
                   {wizardParts.length > WIZARD_PARTS_PAGE_SIZE && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-dk-5/80">Page {wizardPartsPage} of {wizardPartsTotalPages}</span>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setWizardPartsPage(p => Math.max(1, p - 1))} disabled={wizardPartsPage <= 1} className="px-2 py-1 border rounded disabled:opacity-50">Previous</button>
-                        <button type="button" onClick={() => setWizardPartsPage(p => Math.min(wizardPartsTotalPages, p + 1))} disabled={wizardPartsPage >= wizardPartsTotalPages} className="px-2 py-1 border rounded disabled:opacity-50">Next</button>
-                      </div>
-                    </div>
+                    <Pagination
+                      page={wizardPartsPage}
+                      totalPages={wizardPartsTotalPages}
+                      onPageChange={setWizardPartsPage}
+                    />
                   )}
                 </div>
                 )

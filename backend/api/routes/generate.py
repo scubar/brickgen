@@ -43,7 +43,7 @@ _progress_queue: queue.Queue = queue.Queue()
 def _get_ws_lock() -> asyncio.Lock:
     """Get or create the WebSocket subscribers lock in a thread-safe manner."""
     global _ws_subscribers_lock
-    
+
     with _ws_subscribers_lock_init:
         if _ws_subscribers_lock is None:
             try:
@@ -144,7 +144,7 @@ def _remove_job_progress(job_id: str) -> None:
 async def broadcast_progress_task() -> None:
     """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
     ws_lock = _get_ws_lock()
-    
+
     loop = asyncio.get_running_loop()
     while True:
         try:
@@ -600,9 +600,9 @@ async def get_job_progress(job_id: str):
 async def websocket_job_progress(websocket: WebSocket, job_id: str):
     """Stream job progress over WebSocket. Server pushes updates when progress changes. No DB access."""
     ws_lock = _get_ws_lock()
-    
+
     await websocket.accept()
-    
+
     async with ws_lock:
         if job_id not in _ws_subscribers:
             _ws_subscribers[job_id] = []

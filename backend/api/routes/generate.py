@@ -43,18 +43,16 @@ _progress_queue: queue.Queue = queue.Queue()
 def _get_ws_lock() -> asyncio.Lock:
     """Get or create the WebSocket subscribers lock in a thread-safe manner."""
     global _ws_subscribers_lock
-    if _ws_subscribers_lock is not None:
-        return _ws_subscribers_lock
     
     with _ws_subscribers_lock_init:
         if _ws_subscribers_lock is None:
             try:
-                # Try to get the current event loop
-                loop = asyncio.get_running_loop()
-                _ws_subscribers_lock = asyncio.Lock()
+                # Try to get the current event loop to ensure we're in an async context
+                asyncio.get_running_loop()
             except RuntimeError:
-                # No running loop, create the lock anyway (will work when loop starts)
-                _ws_subscribers_lock = asyncio.Lock()
+                # No running loop yet, but that's ok - the lock will work once loop starts
+                pass
+            _ws_subscribers_lock = asyncio.Lock()
         return _ws_subscribers_lock
 
 

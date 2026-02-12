@@ -49,11 +49,30 @@ export function injectApiErrorSetter(setter) {
  * Same as fetch(), but on non-2xx response parses the error and notifies the global
  * error display (if ApiErrorProvider is mounted). Always returns the Response so
  * callers can still check response.ok and handle body as needed.
+ * Automatically adds JWT token from localStorage if available.
  * @param {Parameters<typeof fetch>} args - Same as fetch(url, options)
  * @returns {Promise<Response>}
  */
 export async function apiFetch(...args) {
+  // Add Authorization header if token exists
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    const [url, options = {}] = args
+    const headers = new Headers(options.headers || {})
+    headers.set('Authorization', `Bearer ${token}`)
+    args = [url, { ...options, headers }]
+  }
+
   const response = await fetch(...args)
+
+  // If unauthorized, redirect to login
+  if (response.status === 401) {
+    localStorage.removeItem('auth_token')
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+  }
+
   if (!response.ok && setApiErrorRef) {
     try {
       const error = await parseApiError(response.clone())

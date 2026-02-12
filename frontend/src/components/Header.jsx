@@ -1,6 +1,15 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 
 function Header() {
+  const { isAuthenticated, logout, user } = useAuth()
+  const location = useLocation()
+
+  // Don't show header on login page
+  if (location.pathname === '/login') {
+    return null
+  }
+
   return (
     <header className="bg-dk-2 border-b border-dk-3 shadow-lg">
       <div className="container mx-auto px-4 py-4">
@@ -21,6 +30,19 @@ function Header() {
             <Link to="/attributions" className="px-4 py-2 bg-dk-3 text-dk-5 hover:bg-mint hover:text-dk-1 rounded transition">
               Attributions
             </Link>
+            {isAuthenticated && (
+              <>
+                <span className="px-3 py-2 text-dk-5 text-sm">
+                  {user}
+                </span>
+                <button
+                  onClick={logout}
+                  className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded transition"
+                >
+                  Logout
+                </button>
+              </>
+            )}
           </nav>
         </div>
       </div>

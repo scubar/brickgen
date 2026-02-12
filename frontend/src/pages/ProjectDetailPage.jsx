@@ -99,18 +99,21 @@ function ProjectDetailPage() {
       return Math.min(INITIAL_BACKOFF_MS * Math.pow(2, attemptNumber - 1), MAX_BACKOFF_MS)
     }
 
-    const createPlaceholderJob = (jobId, statusData) => ({
-      job_id: jobId,
-      set_num: '',
-      status: statusData.status,
-      progress: statusData.progressValue,
-      error_message: statusData.error_message ?? null,
-      log: statusData.log ?? null,
-      output_file: null,
-      brickgen_version: null,
-      created_at: '',
-      updated_at: ''
-    })
+    const createPlaceholderJob = (jobId, statusData) => {
+      const nowIso = new Date().toISOString()
+      return {
+        job_id: jobId,
+        set_num: '',
+        status: statusData.status,
+        progress: statusData.progressValue,
+        error_message: statusData.error_message ?? null,
+        log: statusData.log ?? null,
+        output_file: null,
+        brickgen_version: null,
+        created_at: nowIso,
+        updated_at: nowIso
+      }
+    }
 
     const updateJobProgress = (progress) => {
       const { status, progress: progressValue, error_message, log } = progress

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
 import CacheManagementContent from '../components/CacheManagementContent'
-import { DataTable, Badge } from '../components/ui'
+import { DataTable, Badge, LoadingState } from '../components/ui'
 
 function SettingsPage() {
   const navigate = useNavigate()
@@ -233,7 +233,7 @@ function SettingsPage() {
   }
 
   if (loading) {
-    return <div className="text-center py-8 text-dk-5">Loading...</div>
+    return <LoadingState />
   }
 
   const tabs = [

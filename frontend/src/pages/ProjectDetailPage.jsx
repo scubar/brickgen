@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
-import { Pagination, DataTable } from '../components/ui'
+import { Pagination, DataTable, LoadingState, EmptyState, ProgressBar } from '../components/ui'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
@@ -456,7 +456,7 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
-  if (loading || !project) return <div className="text-center py-8 text-dk-5">Loading...</div>
+  if (loading || !project) return <LoadingState />
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -551,7 +551,7 @@ apiFetch(`/api/jobs/${jobId}`)
         <button onClick={openWizard} className="mb-4 px-6 py-2 bg-mint text-dk-1 rounded hover:opacity-90">New job</button>
 
         {jobs.length === 0 ? (
-          <p className="text-dk-5/80">No jobs yet. Click &quot;New job&quot; to create one (wizard will guide you through settings).</p>
+          <EmptyState message='No jobs yet. Click "New job" to create one (wizard will guide you through settings).' />
         ) : (
           <ul className="divide-y divide-dk-3">
             {jobs.map((j) => (
@@ -589,13 +589,7 @@ apiFetch(`/api/jobs/${jobId}`)
                 </div>
                 {(j.status === 'processing' || j.status === 'pending') && j.progress !== undefined && (
                   <div className="mt-2">
-                    <div className="flex justify-between text-sm text-dk-5 mb-1">
-                      <span>Progress</span>
-                      <span>{j.progress}%</span>
-                    </div>
-                    <div className="w-full bg-dk-3 rounded-full h-1.5">
-                      <div className="bg-mint h-1.5 rounded-full transition-all" style={{ width: `${j.progress}%` }} />
-                    </div>
+                    <ProgressBar value={j.progress} label={`Progress: ${j.progress}%`} />
                     {j.log && (
                       <p className="mt-1.5 text-xs font-mono text-dk-5/90 truncate" title={j.log.trim()}>
                         {(() => {

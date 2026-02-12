@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
-import { Pagination } from '../components/ui'
+import { Pagination, LoadingState, EmptyState } from '../components/ui'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
@@ -262,9 +262,9 @@ function SearchPage() {
         <div className="bg-dk-2 border border-dk-3 rounded-lg p-6 mb-8">
           <h2 className="text-xl font-bold mb-4 text-dk-5">Recent Projects</h2>
           {loadingProjects ? (
-            <p className="text-dk-5/80">Loading projects…</p>
+            <LoadingState message="Loading projects…" />
           ) : projects.length === 0 ? (
-            <p className="text-dk-5/80">No projects yet. Open a set and create a project to get started.</p>
+            <EmptyState message="No projects yet. Open a set and create a project to get started." />
           ) : (
             <div className="grid gap-3">
               {projects.slice(0, 3).map((p) => (
@@ -305,9 +305,9 @@ function SearchPage() {
             </button>
           </div>
           {loadingCached ? (
-            <p className="text-dk-5/80">Loading cached sets…</p>
+            <LoadingState message="Loading cached sets…" />
           ) : cachedSets.length === 0 ? (
-            <p className="text-dk-5/80">No cached sets yet. Search for a set to cache it.</p>
+            <EmptyState message="No cached sets yet. Search for a set to cache it." />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {cachedSets.map((set) => (

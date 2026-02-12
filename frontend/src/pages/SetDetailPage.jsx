@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
-import { Pagination, DataTable } from '../components/ui'
+import { Pagination, DataTable, LoadingState, EmptyState } from '../components/ui'
 
 function SetDetailPage() {
   const { setNum } = useParams()
@@ -132,7 +132,7 @@ function SetDetailPage() {
   }
 
   if (loading) {
-    return <div className="text-center py-8 text-dk-5">Loading...</div>
+    return <LoadingState />
   }
 
   if (error && !setDetail) {
@@ -192,9 +192,9 @@ function SetDetailPage() {
         <div className="border-t border-dk-3 pt-6 mt-6">
           <h2 className="text-2xl font-bold mb-4 text-dk-5">Projects for this set</h2>
           {loadingProjects ? (
-            <p className="text-dk-5">Loading projects...</p>
+            <LoadingState message="Loading projects..." />
           ) : projectsForSet.length === 0 ? (
-            <p className="text-dk-5">No projects for this set yet. Create one above.</p>
+            <EmptyState message="No projects for this set yet. Create one above." />
           ) : (
             <div className="grid gap-4">
               {projectsForSet.map((p) => (

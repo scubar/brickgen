@@ -35,6 +35,7 @@ _running_job_id: Optional[str] = None
 
 # WebSocket: job_id -> list of connected WebSockets. Progress updates are pushed via _progress_queue.
 _ws_subscribers: Dict[str, List[Any]] = {}
+_ws_subscribers_lock: Optional[asyncio.Lock] = None
 _progress_queue: queue.Queue = queue.Queue()
 
 
@@ -125,6 +126,10 @@ def _remove_job_progress(job_id: str) -> None:
 
 async def broadcast_progress_task() -> None:
     """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
+    global _ws_subscribers_lock
+    if _ws_subscribers_lock is None:
+        _ws_subscribers_lock = asyncio.Lock()
+    
     loop = asyncio.get_running_loop()
     while True:
         try:
@@ -136,14 +141,19 @@ async def broadcast_progress_task() -> None:
             # Timeout without new items; yield control and continue waiting.
             await asyncio.sleep(0)
             continue
-        for ws in list(_ws_subscribers.get(job_id, [])):
+        
+        async with _ws_subscribers_lock:
+            subscribers = list(_ws_subscribers.get(job_id, []))
+        
+        for ws in subscribers:
             try:
                 await ws.send_json(payload)
             except Exception:
-                try:
-                    _ws_subscribers[job_id].remove(ws)
-                except (KeyError, ValueError):
-                    pass
+                async with _ws_subscribers_lock:
+                    try:
+                        _ws_subscribers[job_id].remove(ws)
+                    except (KeyError, ValueError):
+                        pass
         await asyncio.sleep(0)
 
 
@@ -574,10 +584,17 @@ async def get_job_progress(job_id: str):
 @router.websocket("/jobs/{job_id}/ws")
 async def websocket_job_progress(websocket: WebSocket, job_id: str):
     """Stream job progress over WebSocket. Server pushes updates when progress changes. No DB access."""
+    global _ws_subscribers_lock
+    if _ws_subscribers_lock is None:
+        _ws_subscribers_lock = asyncio.Lock()
+    
     await websocket.accept()
-    if job_id not in _ws_subscribers:
-        _ws_subscribers[job_id] = []
-    _ws_subscribers[job_id].append(websocket)
+    
+    async with _ws_subscribers_lock:
+        if job_id not in _ws_subscribers:
+            _ws_subscribers[job_id] = []
+        _ws_subscribers[job_id].append(websocket)
+    
     overlay = get_job_progress_overlay(job_id)
     if overlay:
         try:
@@ -595,13 +612,14 @@ async def websocket_job_progress(websocket: WebSocket, job_id: str):
     except WebSocketDisconnect:
         pass
     finally:
-        if job_id in _ws_subscribers:
-            try:
-                _ws_subscribers[job_id].remove(websocket)
-            except ValueError:
-                pass
-            if not _ws_subscribers[job_id]:
-                del _ws_subscribers[job_id]
+        async with _ws_subscribers_lock:
+            if job_id in _ws_subscribers:
+                try:
+                    _ws_subscribers[job_id].remove(websocket)
+                except ValueError:
+                    pass
+                if not _ws_subscribers[job_id]:
+                    del _ws_subscribers[job_id]
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatus)

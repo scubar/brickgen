@@ -125,6 +125,9 @@ def _remove_job_progress(job_id: str) -> None:
 
 async def broadcast_progress_task() -> None:
     """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
+    consecutive_errors = 0
+    max_consecutive_errors = 10
+    
     while True:
         try:
             try:
@@ -141,11 +144,21 @@ async def broadcast_progress_task() -> None:
                     except (KeyError, ValueError):
                         pass
             await asyncio.sleep(0)
+            consecutive_errors = 0
         except asyncio.CancelledError:
             logger.info("WebSocket broadcast task cancelled")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in WebSocket broadcast task: {e}", exc_info=True)
+            consecutive_errors += 1
+            logger.error(
+                f"Unexpected error in WebSocket broadcast task (error {consecutive_errors}/{max_consecutive_errors}): {e}",
+                exc_info=True
+            )
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(
+                    f"WebSocket broadcast task encountered {max_consecutive_errors} consecutive errors. Terminating task."
+                )
+                raise
             await asyncio.sleep(1.0)
 
 

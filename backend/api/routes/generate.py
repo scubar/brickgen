@@ -125,11 +125,16 @@ def _remove_job_progress(job_id: str) -> None:
 
 async def broadcast_progress_task() -> None:
     """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
+    loop = asyncio.get_running_loop()
     while True:
         try:
-            job_id, payload = _progress_queue.get_nowait()
+            # Use blocking get with timeout in a thread executor to avoid tight polling on the event loop.
+            job_id, payload = await loop.run_in_executor(
+                None, _progress_queue.get, True, 1.0  # block=True, timeout=1.0
+            )
         except queue.Empty:
-            await asyncio.sleep(0.05)
+            # Timeout without new items; yield control and continue waiting.
+            await asyncio.sleep(0)
             continue
         for ws in list(_ws_subscribers.get(job_id, [])):
             try:

@@ -1,12 +1,8 @@
 """Generation routes for creating 3MF files."""
-import asyncio
+import json
 import logging
-import queue
-import threading
 import uuid
 import zipfile
-from pathlib import Path
-from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from backend.models.schemas import GenerateRequest, JobProgress, JobStatus
@@ -14,182 +10,29 @@ from backend.api.integrations.rebrickable import RebrickableClient
 from backend.api.integrations.ldraw import LDrawManager
 from backend.core.stl_processing import STLConverter
 from backend.core.threemf_generator import ThreeMFGenerator
+from backend.core.job_progress import (
+    add_ws_subscriber,
+    get_job_progress_overlay,
+    get_ws_lock,
+    last_log_line,
+    remove_job_progress,
+    remove_ws_subscriber,
+    set_job_progress,
+    claim_job_slot,
+    release_job_slot,
+    is_job_running,
+)
+from backend.core.async_runner import run_async_in_background_thread
 from backend.database import get_db, Job, Project
 from backend.api.routes.settings import sync_config_from_db
 from backend.config import settings
 from backend.version import __version__
-import json
-from datetime import datetime
-import shutil
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# In-memory job progress (single-process). Key: job_id. Value: status, progress, error_message, log.
-# Multi-worker deployments would not share this store.
-_job_progress: Dict[str, Dict[str, Any]] = {}
-_job_progress_lock = threading.Lock()
 
-# Only one generation job may run at a time. Set when a job is started, cleared when it ends.
-_running_job_id: Optional[str] = None
-
-# WebSocket: job_id -> list of connected WebSockets. Progress updates are pushed via _progress_queue.
-# All access to _ws_subscribers is protected by the asyncio lock returned by _get_ws_lock().
-_ws_subscribers: Dict[str, List[Any]] = {}
-_ws_subscribers_lock: Optional[asyncio.Lock] = None
-_ws_subscribers_lock_guard = threading.Lock()
-_progress_queue: queue.Queue = queue.Queue(maxsize=1000)
-
-
-def _get_ws_lock() -> asyncio.Lock:
-    """Return the shared asyncio lock for _ws_subscribers. Uses a threading.Lock so that
-    concurrent first access from multiple coroutines creates only one asyncio.Lock."""
-    global _ws_subscribers_lock
-    with _ws_subscribers_lock_guard:
-        if _ws_subscribers_lock is None:
-            _ws_subscribers_lock = asyncio.Lock()
-        return _ws_subscribers_lock
-
-# Circuit breaker for broadcast task: max consecutive errors before terminating
-_BROADCAST_MAX_CONSECUTIVE_ERRORS = 10
-_BROADCAST_ERROR_DELAY_SECONDS = 1.0
-
-
-def is_any_job_running() -> bool:
-    """Return True if a generation job is currently running (slot claimed)."""
-    with _job_progress_lock:
-        return _running_job_id is not None
-
-
-def is_job_running(job_id: str) -> bool:
-    """Return True if the given job is currently running."""
-    with _job_progress_lock:
-        return _running_job_id == job_id
-
-
-def claim_job_slot(job_id: str) -> bool:
-    """If no job is running, set _running_job_id to job_id and return True. Otherwise return False."""
-    global _running_job_id
-    with _job_progress_lock:
-        if _running_job_id is not None:
-            return False
-        _running_job_id = job_id
-        return True
-
-
-def get_job_progress_overlay(job_id: str) -> Optional[Dict[str, Any]]:
-    """Return overlay dict (status, progress, error_message, log) for a running job, or None."""
-    with _job_progress_lock:
-        entry = _job_progress.get(job_id)
-        if not entry:
-            return None
-        return {
-            "status": entry["status"],
-            "progress": entry["progress"],
-            "error_message": entry.get("error_message"),
-            "log": entry.get("log"),
-        }
-
-
-def last_log_line(full_log: Optional[str]) -> Optional[str]:
-    """Return only the latest log line for API responses (smaller poll payload)."""
-    if not full_log or not full_log.strip():
-        return None
-    lines = [ln.strip() for ln in full_log.splitlines() if ln.strip()]
-    return lines[-1] if lines else full_log.strip()
-
-
-def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Optional[int] = None,
-                      error_message: Optional[str] = None, log: Optional[str] = None) -> None:
-    """Update in-memory progress (no DB commit). Also enqueues payload for WebSocket broadcast."""
-    with _job_progress_lock:
-        if job_id not in _job_progress:
-            _job_progress[job_id] = {
-                "status": "processing",
-                "progress": 0,
-                "error_message": None,
-                "log": None,
-            }
-        entry = _job_progress[job_id]
-        if status is not None:
-            entry["status"] = status
-        if progress is not None:
-            entry["progress"] = progress
-        if error_message is not None:
-            entry["error_message"] = error_message
-        if log is not None:
-            entry["log"] = log
-        payload = {
-            "status": entry["status"],
-            "progress": entry["progress"],
-            "error_message": entry.get("error_message"),
-            "log": last_log_line(entry.get("log")),
-        }
-    try:
-        _progress_queue.put_nowait((job_id, payload))
-    except queue.Full:
-        logger.warning(f"Progress queue is full (maxsize={_progress_queue.maxsize}), dropping update for job {job_id}. "
-                      "This may indicate broadcast_progress_task has fallen behind.")
-
-
-def _remove_job_progress(job_id: str) -> None:
-    """Remove job from in-memory store and release the single-job slot (call when job completes or fails)."""
-    global _running_job_id
-    with _job_progress_lock:
-        _job_progress.pop(job_id, None)
-        if _running_job_id == job_id:
-            _running_job_id = None
-
-
-async def broadcast_progress_task() -> None:
-    """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job.
-    
-    Implements a circuit breaker pattern: after _BROADCAST_MAX_CONSECUTIVE_ERRORS consecutive
-    exceptions in message processing, the task terminates. The error counter resets after each
-    successful message broadcast (i.e., after queue.get_nowait() succeeds and all WebSocket
-    sends complete without raising to the outer except block).
-    """
-    consecutive_errors = 0
-    
-    while True:
-        try:
-            try:
-                job_id, payload = _progress_queue.get_nowait()
-            except queue.Empty:
-                await asyncio.sleep(0.05)
-                continue
-            async with _get_ws_lock():
-                subscribers = list(_ws_subscribers.get(job_id, []))
-            for ws in subscribers:
-                try:
-                    await ws.send_json(payload)
-                except Exception:
-                    async with _get_ws_lock():
-                        try:
-                            if job_id in _ws_subscribers:
-                                _ws_subscribers[job_id].remove(ws)
-                        except (KeyError, ValueError):
-                            pass
-            await asyncio.sleep(0)
-            consecutive_errors = 0
-        except asyncio.CancelledError:
-            logger.debug("WebSocket broadcast task received cancellation")
-            raise
-        except Exception as e:
-            consecutive_errors += 1
-            logger.error(
-                f"Unexpected error in WebSocket broadcast task (error {consecutive_errors}/{_BROADCAST_MAX_CONSECUTIVE_ERRORS}): {e}",
-                exc_info=True
-            )
-            if consecutive_errors >= _BROADCAST_MAX_CONSECUTIVE_ERRORS:
-                logger.critical(
-                    f"WebSocket broadcast task encountered {_BROADCAST_MAX_CONSECUTIVE_ERRORS} consecutive errors. Terminating task."
-                )
-                raise
-            await asyncio.sleep(_BROADCAST_ERROR_DELAY_SECONDS)
-
-
-def start_generation_thread(
+def start_generation(
     job_id: str,
     set_num: str,
     plate_width: int,
@@ -199,24 +42,18 @@ def start_generation_thread(
     generate_3mf: bool = True,
     generate_stl: bool = True,
 ) -> None:
-    """Run process_generation in a separate thread so the request returns immediately.
-    The server's event loop is not blocked, so job creation and polling respond right away.
-    """
-    def _run() -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(
-                process_generation(
-                    job_id, set_num, plate_width, plate_depth, plate_height,
-                    bypass_cache, generate_3mf, generate_stl,
-                )
-            )
-        finally:
-            loop.close()
-
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
+    """Run process_generation in a background thread so the request returns immediately."""
+    run_async_in_background_thread(
+        process_generation,
+        job_id,
+        set_num,
+        plate_width,
+        plate_depth,
+        plate_height,
+        bypass_cache,
+        generate_3mf,
+        generate_stl,
+    )
 
 
 async def process_generation(
@@ -243,6 +80,18 @@ async def process_generation(
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
     job_log = []
+
+    def _is_job_cancelled() -> bool:
+        j = db.query(Job).filter(Job.id == job_id).first()
+        return j is not None and getattr(j, "status", None) == "cancelled"
+
+    def _exit_if_cancelled() -> bool:
+        if _is_job_cancelled():
+            remove_job_progress(job_id)
+            db.close()
+            return True
+        return False
+
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
@@ -252,26 +101,30 @@ async def process_generation(
         job.status = "processing"
         job.progress = 0
         db.commit()
+        if _exit_if_cancelled():
+            return
         job_log.append("Checking LDraw library...")
-        _set_job_progress(job_id, status="processing", progress=5, log="\n".join(job_log))
+        set_job_progress(job_id, status="processing", progress=5, log="\n".join(job_log))
         
         # Step 1: Ensure LDraw library exists
         logger.info(f"Job {job_id}: Checking LDraw library")
         ldraw_manager = LDrawManager()
         if not await ldraw_manager.ensure_library_exists():
             log_str = "\n".join(job_log) if job_log else None
-            _set_job_progress(job_id, status="failed", error_message="Failed to download LDraw library", log=log_str)
+            set_job_progress(job_id, status="failed", error_message="Failed to download LDraw library", log=log_str)
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = "failed"
                 job.error_message = "Failed to download LDraw library"
                 job.log = log_str
                 db.commit()
-            _remove_job_progress(job_id)
+            remove_job_progress(job_id)
+            return
+        if _exit_if_cancelled():
             return
         
         job_log.append("Fetching parts list...")
-        _set_job_progress(job_id, progress=10, log="\n".join(job_log))
+        set_job_progress(job_id, progress=10, log="\n".join(job_log))
         
         # Step 2: Get parts list from Rebrickable (use cache to avoid repeat API calls)
         logger.info(f"Job {job_id}: Fetching parts list for set {set_num}")
@@ -282,21 +135,23 @@ async def process_generation(
         db.commit()  # release so polling can read while we do STL work
         if not parts:
             log_str = "\n".join(job_log) if job_log else None
-            _set_job_progress(job_id, status="failed", error_message=f"No parts found for set {set_num}", log=log_str)
+            set_job_progress(job_id, status="failed", error_message=f"No parts found for set {set_num}", log=log_str)
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = "failed"
                 job.error_message = f"No parts found for set {set_num}"
                 job.log = log_str
                 db.commit()
-            _remove_job_progress(job_id)
+            remove_job_progress(job_id)
+            return
+        if _exit_if_cancelled():
             return
         
         # Filter out spare parts
         parts = [p for p in parts if not p.get('is_spare', False)]
         
         logger.info(f"Job {job_id}: Found {len(parts)} parts")
-        _set_job_progress(job_id, progress=20)
+        set_job_progress(job_id, progress=20)
         
         # Per-part rotation and per-job scale/rotation from job settings
         try:
@@ -332,6 +187,8 @@ async def process_generation(
         total_instances = sum(p['quantity'] for p in parts)
 
         for part_index, part in enumerate(parts):
+            if _exit_if_cancelled():
+                return
             ldraw_id = part.get('ldraw_id')
             part_num = part['part_num']
             quantity = part['quantity']
@@ -381,23 +238,25 @@ async def process_generation(
                 job_log.append(line)
             
             progress = 20 + int((converted_count / total_instances) * 50) if total_instances else 20
-            _set_job_progress(job_id, progress=min(progress, 70), log="\n".join(job_log))
+            set_job_progress(job_id, progress=min(progress, 70), log="\n".join(job_log))
             db.commit()  # release after each part so polling/other requests are not blocked
         if not stl_files:
             log_str = "\n".join(job_log) if job_log else None
-            _set_job_progress(job_id, status="failed", error_message="No parts could be converted to STL", log=log_str)
+            set_job_progress(job_id, status="failed", error_message="No parts could be converted to STL", log=log_str)
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = "failed"
                 job.error_message = "No parts could be converted to STL"
                 job.log = log_str
                 db.commit()
-            _remove_job_progress(job_id)
+            remove_job_progress(job_id)
+            return
+        if _exit_if_cancelled():
             return
         
         logger.info(f"Job {job_id}: Converted {len(stl_files)} part instances")
         job_log.append("Building output (3MF / ZIP)...")
-        _set_job_progress(job_id, progress=75, log="\n".join(job_log))
+        set_job_progress(job_id, progress=75, log="\n".join(job_log))
         
         # Step 4: Build output per options (3MF and/or STL; STLs go in stls/ subdir when in ZIP)
         output_filename = None
@@ -405,9 +264,11 @@ async def process_generation(
         threemf_path = settings.output_dir / f"{job_id}.3mf"
 
         if generate_3mf:
+            if _exit_if_cancelled():
+                return
             logger.info(f"Job {job_id}: Generating 3MF")
             job_log.append("Generating 3MF...")
-            _set_job_progress(job_id, progress=80, log="\n".join(job_log))
+            set_job_progress(job_id, progress=80, log="\n".join(job_log))
             try:
                 unique_parts = {}
                 for stl_path, ldraw_id, color_rgb in stl_files:
@@ -425,18 +286,20 @@ async def process_generation(
                 logger.error(f"Job {job_id}: 3MF generation error: {e}")
                 if not generate_stl:
                     log_str = "\n".join(job_log) if job_log else None
-                    _set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+                    set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
                     job = db.query(Job).filter(Job.id == job_id).first()
                     if job:
                         job.status = "failed"
                         job.error_message = str(e)
                         job.log = log_str
                         db.commit()
-                    _remove_job_progress(job_id)
+                    remove_job_progress(job_id)
                     return
                 generate_3mf = False
 
         if need_zip:
+            if _exit_if_cancelled():
+                return
             # Log total size of files to zip so the user sees why this phase can take a while
             num_files = (1 if (generate_3mf and threemf_path.exists()) else 0) + (len(stl_files) if generate_stl else 0)
             total_bytes = 0
@@ -448,7 +311,7 @@ async def process_generation(
             size_mb = total_bytes / (1024 * 1024)
             size_str = f"{size_mb:.1f} MB" if size_mb >= 0.01 else f"{total_bytes} B"
             job_log.append(f"Creating ZIP: {num_files} files ({size_str})...")
-            _set_job_progress(job_id, progress=82, log="\n".join(job_log))
+            set_job_progress(job_id, progress=82, log="\n".join(job_log))
             logger.info(f"Job {job_id}: Creating ZIP (3MF={generate_3mf}, STL in stls/={generate_stl})")
             zip_filename = f"{job_id}.zip"
             zip_path = settings.output_dir / zip_filename
@@ -479,26 +342,28 @@ async def process_generation(
                     job_log.append(f"ZIP created: {zip_size_str} ({reduction:.0f}% reduction)")
                 else:
                     job_log.append(f"ZIP created: {zip_size_str}")
-                _set_job_progress(job_id, progress=90, log="\n".join(job_log))
+                set_job_progress(job_id, progress=90, log="\n".join(job_log))
             except Exception as e:
                 logger.error(f"Job {job_id}: Failed to create ZIP: {e}")
                 log_str = "\n".join(job_log) if job_log else None
-                _set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+                set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
                 job = db.query(Job).filter(Job.id == job_id).first()
                 if job:
                     job.status = "failed"
                     job.error_message = str(e)
                     job.log = log_str
                     db.commit()
-                _remove_job_progress(job_id)
+                remove_job_progress(job_id)
                 return
         else:
             output_filename = f"{job_id}.3mf"
 
         job_log.append("Finalizing...")
-        _set_job_progress(job_id, progress=95, log="\n".join(job_log))
+        set_job_progress(job_id, progress=95, log="\n".join(job_log))
 
-        # Complete the job: single DB commit with final state
+        # Complete the job: single DB commit with final state (skip if user cancelled)
+        if _exit_if_cancelled():
+            return
         log_str = "\n".join(job_log) if job_log else None
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
@@ -508,24 +373,24 @@ async def process_generation(
             job.log = log_str
             db.commit()
         # Push final state to WebSocket clients before removing overlay (so UI updates without refresh)
-        _set_job_progress(job_id, status="completed", progress=100, log=log_str)
+        set_job_progress(job_id, status="completed", progress=100, log=log_str)
 
         logger.info(f"Job {job_id}: Completed successfully with {output_filename}")
         
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
         log_str = "\n".join(job_log) if job_log else None
-        _set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+        set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
             job.status = "failed"
             job.error_message = str(e)
             job.log = log_str
             db.commit()
-        _remove_job_progress(job_id)
+        remove_job_progress(job_id)
     
     finally:
-        _remove_job_progress(job_id)
+        remove_job_progress(job_id)
         db.close()
 
 
@@ -535,13 +400,13 @@ async def generate_3mf(
     db: Session = Depends(get_db)
 ):
     """Generate 3MF file for a LEGO set."""
+    job_id = str(uuid.uuid4())
+    if not claim_job_slot(job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Another generation job is already running. Only one job can run at a time.",
+        )
     try:
-        job_id = str(uuid.uuid4())
-        if not claim_job_slot(job_id):
-            raise HTTPException(
-                status_code=409,
-                detail="Another generation job is already running. Only one job can run at a time.",
-            )
         settings_obj = {
             "plate_width": request.plate_width,
             "plate_depth": request.plate_depth,
@@ -570,7 +435,7 @@ async def generate_3mf(
         db.commit()
         db.refresh(job)
 
-        start_generation_thread(
+        start_generation(
             job_id,
             request.set_num,
             request.plate_width,
@@ -593,8 +458,9 @@ async def generate_3mf(
             created_at=job.created_at,
             updated_at=job.updated_at
         )
-
     except Exception as e:
+        db.rollback()
+        release_job_slot(job_id)
         logger.error(f"Error creating generation job: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -617,10 +483,8 @@ async def get_job_progress(job_id: str):
 async def websocket_job_progress(websocket: WebSocket, job_id: str):
     """Stream job progress over WebSocket. Server pushes updates when progress changes. No DB access."""
     await websocket.accept()
-    async with _get_ws_lock():
-        if job_id not in _ws_subscribers:
-            _ws_subscribers[job_id] = []
-        _ws_subscribers[job_id].append(websocket)
+    async with get_ws_lock():
+        add_ws_subscriber(job_id, websocket)
     overlay = get_job_progress_overlay(job_id)
     if overlay:
         try:
@@ -638,14 +502,8 @@ async def websocket_job_progress(websocket: WebSocket, job_id: str):
     except WebSocketDisconnect:
         pass
     finally:
-        async with _get_ws_lock():
-            if job_id in _ws_subscribers:
-                try:
-                    _ws_subscribers[job_id].remove(websocket)
-                except ValueError:
-                    pass
-                if not _ws_subscribers[job_id]:
-                    del _ws_subscribers[job_id]
+        async with get_ws_lock():
+            remove_ws_subscriber(job_id, websocket)
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatus)
@@ -706,6 +564,28 @@ async def delete_job_files(job_id: str, db: Session = Depends(get_db)):
     return {"message": f"Deleted {out_file}" if deleted else "File was already missing", "deleted": deleted}
 
 
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str, db: Session = Depends(get_db)):
+    """Cancel a running job. Frees the slot and marks the job as cancelled; the worker will exit when it next checks."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not is_job_running(job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Job is not running.",
+        )
+    log_str = (job.log or "") + "\nCancelled by user." if job.log else "Cancelled by user."
+    job.status = "cancelled"
+    job.error_message = "Cancelled by user"
+    job.log = log_str
+    db.commit()
+    release_job_slot(job_id)
+    remove_job_progress(job_id)
+    logger.info(f"Job {job_id} cancelled by user")
+    return {"message": "Job cancelled"}
+
+
 @router.delete("/jobs/{job_id}")
 async def delete_job(job_id: str, db: Session = Depends(get_db)):
     """Delete a job record and its output file (if any)."""
@@ -755,42 +635,47 @@ async def rerun_job(
             status_code=409,
             detail="Another generation job is already running. Only one job can run at a time.",
         )
-    new_job = Job(
-        id=new_job_id,
-        set_num=job.set_num,
-        status="pending",
-        progress=0,
-        plate_width=plate_width,
-        plate_depth=plate_depth,
-        plate_height=plate_height,
-        brickgen_version=__version__,
-        project_id=job.project_id,
-        settings=job.settings
-    )
-    db.add(new_job)
-    db.commit()
-    db.refresh(new_job)
+    try:
+        new_job = Job(
+            id=new_job_id,
+            set_num=job.set_num,
+            status="pending",
+            progress=0,
+            plate_width=plate_width,
+            plate_depth=plate_depth,
+            plate_height=plate_height,
+            brickgen_version=__version__,
+            project_id=job.project_id,
+            settings=job.settings
+        )
+        db.add(new_job)
+        db.commit()
+        db.refresh(new_job)
 
-    start_generation_thread(
-        new_job_id,
-        job.set_num,
-        plate_width,
-        plate_depth,
-        plate_height,
-        bypass_cache,
-        generate_3mf,
-        generate_stl,
-    )
+        start_generation(
+            new_job_id,
+            job.set_num,
+            plate_width,
+            plate_depth,
+            plate_height,
+            bypass_cache,
+            generate_3mf,
+            generate_stl,
+        )
 
-    return JobStatus(
-        job_id=new_job.id,
-        set_num=new_job.set_num,
-        status=new_job.status,
-        progress=new_job.progress,
-        error_message=new_job.error_message,
-        output_file=new_job.output_file,
-        brickgen_version=new_job.brickgen_version,
-        log=new_job.log,
-        created_at=new_job.created_at,
-        updated_at=new_job.updated_at
-    )
+        return JobStatus(
+            job_id=new_job.id,
+            set_num=new_job.set_num,
+            status=new_job.status,
+            progress=new_job.progress,
+            error_message=new_job.error_message,
+            output_file=new_job.output_file,
+            brickgen_version=new_job.brickgen_version,
+            log=new_job.log,
+            created_at=new_job.created_at,
+            updated_at=new_job.updated_at
+        )
+    except Exception as e:
+        db.rollback()
+        release_job_slot(new_job_id)
+        raise

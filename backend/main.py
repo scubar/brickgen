@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from backend.config import settings
 from backend.database import init_db
 from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts
+from backend.core.job_progress import broadcast_progress_task
 from backend.version import __version__
 
 # Configure logging (level from settings.log_level / LOG_LEVEL env)
@@ -53,7 +54,7 @@ app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"])
 async def startup_event():
     """Start the WebSocket progress broadcast task (drains queue from worker thread)."""
     global _broadcast_task
-    _broadcast_task = asyncio.create_task(generate.broadcast_progress_task())
+    _broadcast_task = asyncio.create_task(broadcast_progress_task())
     
     def task_done_callback(task):
         """Log if the broadcast task terminates unexpectedly."""

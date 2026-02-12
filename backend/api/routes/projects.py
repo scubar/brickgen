@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from backend.database import get_db, Project, Job
 from backend.config import settings
 from backend.version import __version__
-from backend.api.routes.generate import get_job_progress_overlay, last_log_line, start_generation_thread, claim_job_slot
+from backend.core.job_progress import get_job_progress_overlay, last_log_line, claim_job_slot, release_job_slot
+from backend.api.routes.generate import start_generation
 import json
 
 logger = logging.getLogger(__name__)
@@ -217,54 +218,59 @@ async def create_project_job(
             status_code=409,
             detail="Another generation job is already running. Only one job can run at a time.",
         )
-    settings_obj = {
-        "plate_width": body.plate_width,
-        "plate_depth": body.plate_depth,
-        "plate_height": body.plate_height,
-        "bypass_cache": body.bypass_cache,
-        "generate_3mf": body.generate_3mf,
-        "generate_stl": body.generate_stl,
-        "per_part_rotation": body.per_part_rotation or {},
-    }
-    if body.scale_factor is not None:
-        settings_obj["scale_factor"] = float(body.scale_factor)
-    settings_json = json.dumps(settings_obj)
+    try:
+        settings_obj = {
+            "plate_width": body.plate_width,
+            "plate_depth": body.plate_depth,
+            "plate_height": body.plate_height,
+            "bypass_cache": body.bypass_cache,
+            "generate_3mf": body.generate_3mf,
+            "generate_stl": body.generate_stl,
+            "per_part_rotation": body.per_part_rotation or {},
+        }
+        if body.scale_factor is not None:
+            settings_obj["scale_factor"] = float(body.scale_factor)
+        settings_json = json.dumps(settings_obj)
 
-    job = Job(
-        id=job_id,
-        project_id=project_id,
-        set_num=project.set_num,
-        status="pending",
-        progress=0,
-        plate_width=body.plate_width,
-        plate_depth=body.plate_depth,
-        plate_height=body.plate_height,
-        brickgen_version=__version__,
-        settings=settings_json
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
+        job = Job(
+            id=job_id,
+            project_id=project_id,
+            set_num=project.set_num,
+            status="pending",
+            progress=0,
+            plate_width=body.plate_width,
+            plate_depth=body.plate_depth,
+            plate_height=body.plate_height,
+            brickgen_version=__version__,
+            settings=settings_json
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
 
-    start_generation_thread(
-        job_id,
-        project.set_num,
-        body.plate_width,
-        body.plate_depth,
-        body.plate_height,
-        body.bypass_cache,
-        body.generate_3mf,
-        body.generate_stl,
-    )
+        start_generation(
+            job_id,
+            project.set_num,
+            body.plate_width,
+            body.plate_depth,
+            body.plate_height,
+            body.bypass_cache,
+            body.generate_3mf,
+            body.generate_stl,
+        )
 
-    return JobResponse(
-        job_id=job.id,
-        set_num=job.set_num,
-        status=job.status,
-        progress=job.progress,
-        error_message=job.error_message,
-        output_file=job.output_file,
-        brickgen_version=job.brickgen_version,
-        created_at=job.created_at.isoformat() if job.created_at else "",
-        updated_at=job.updated_at.isoformat() if job.updated_at else ""
-    )
+        return JobResponse(
+            job_id=job.id,
+            set_num=job.set_num,
+            status=job.status,
+            progress=job.progress,
+            error_message=job.error_message,
+            output_file=job.output_file,
+            brickgen_version=job.brickgen_version,
+            created_at=job.created_at.isoformat() if job.created_at else "",
+            updated_at=job.updated_at.isoformat() if job.updated_at else ""
+        )
+    except Exception:
+        db.rollback()
+        release_job_slot(job_id)
+        raise

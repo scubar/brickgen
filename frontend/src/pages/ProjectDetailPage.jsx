@@ -31,6 +31,7 @@ function ProjectDetailPage() {
   const [partsPage, setPartsPage] = useState(1)
   const [colorRefPage, setColorRefPage] = useState(1)
   const [deletingJobId, setDeletingJobId] = useState(null)
+  const [cancellingJobId, setCancellingJobId] = useState(null)
   const WIZARD_PARTS_PAGE_SIZE = 5
   const PARTS_PAGE_SIZE = 5
   const COLOR_REF_PAGE_SIZE = 20
@@ -275,7 +276,7 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
-  const TERMINAL_JOB_STATUSES = ['completed', 'failed']
+  const TERMINAL_JOB_STATUSES = ['completed', 'failed', 'cancelled']
 
   const fetchJobs = async () => {
     try {
@@ -405,6 +406,27 @@ apiFetch(`/api/jobs/${jobId}`)
       await fetchJobs()
     } catch (e) {
       console.error(e)
+    }
+  }
+
+  const cancelJob = async (jobId) => {
+    if (!confirm('Cancel this job? The slot will be freed and the job marked as cancelled.')) return
+    setCancellingJobId(jobId)
+    try {
+      const r = await apiFetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
+      if (!r.ok) return
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.job_id === jobId
+            ? { ...job, status: 'cancelled', error_message: 'Cancelled by user' }
+            : job
+        )
+      )
+      setActiveJobId((prev) => (prev === jobId ? null : prev))
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setCancellingJobId(null)
     }
   }
 
@@ -546,7 +568,7 @@ apiFetch(`/api/jobs/${jobId}`)
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>{j.job_id.slice(0, 8)}…</code>
-                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
+                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : j.status === 'cancelled' ? 'bg-amber-500/20 text-amber-400' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
                       {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
                         <span className="text-amber-400 text-xs">(different version)</span>
                       )}
@@ -560,11 +582,17 @@ apiFetch(`/api/jobs/${jobId}`)
                     {j.status === 'completed' && j.output_file && (
                       <a href={`/api/download/${j.job_id}`} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
                     )}
-                    <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
+                    {TERMINAL_JOB_STATUSES.includes(j.status) && (
+                      <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
+                    )}
                     {j.output_file && (
                       <button onClick={() => deleteJobFiles(j.job_id)} className="px-3 py-1 text-dk-5 border border-dk-3 rounded text-sm hover:bg-dk-3">Clear files</button>
                     )}
-                    <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}</button>
+                    {!TERMINAL_JOB_STATUSES.includes(j.status) ? (
+                      <button onClick={() => cancelJob(j.job_id)} disabled={cancellingJobId === j.job_id} className="px-3 py-1 text-amber-400 hover:text-amber-300 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{cancellingJobId === j.job_id ? 'Cancelling…' : 'Cancel job'}</button>
+                    ) : (
+                      <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}</button>
+                    )}
                   </div>
                 </div>
                 {(j.status === 'processing' || j.status === 'pending') && j.progress !== undefined && (

@@ -35,7 +35,7 @@ _running_job_id: Optional[str] = None
 
 # WebSocket: job_id -> list of connected WebSockets. Progress updates are pushed via _progress_queue.
 _ws_subscribers: Dict[str, List[Any]] = {}
-_progress_queue: queue.Queue = queue.Queue()
+_progress_queue: queue.Queue = queue.Queue(maxsize=1000)
 
 
 def is_any_job_running() -> bool:
@@ -111,7 +111,8 @@ def _set_job_progress(job_id: str, *, status: Optional[str] = None, progress: Op
     try:
         _progress_queue.put_nowait((job_id, payload))
     except queue.Full:
-        pass
+        logger.warning(f"Progress queue is full (maxsize=1000), dropping update for job {job_id}. "
+                      "This may indicate broadcast_progress_task has fallen behind.")
 
 
 def _remove_job_progress(job_id: str) -> None:

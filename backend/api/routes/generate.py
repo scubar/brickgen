@@ -37,6 +37,9 @@ _running_job_id: Optional[str] = None
 _ws_subscribers: Dict[str, List[Any]] = {}
 _progress_queue: queue.Queue = queue.Queue()
 
+# Circuit breaker for broadcast task: max consecutive errors before terminating
+_BROADCAST_MAX_CONSECUTIVE_ERRORS = 10
+
 
 def is_any_job_running() -> bool:
     """Return True if a generation job is currently running (slot claimed)."""
@@ -126,7 +129,6 @@ def _remove_job_progress(job_id: str) -> None:
 async def broadcast_progress_task() -> None:
     """Background task: drain _progress_queue and send payload to all WebSocket subscribers for that job."""
     consecutive_errors = 0
-    max_consecutive_errors = 10
     
     while True:
         try:
@@ -143,19 +145,19 @@ async def broadcast_progress_task() -> None:
                         _ws_subscribers[job_id].remove(ws)
                     except (KeyError, ValueError):
                         pass
-            consecutive_errors = 0
             await asyncio.sleep(0)
+            consecutive_errors = 0
         except asyncio.CancelledError:
             raise
         except Exception as e:
             consecutive_errors += 1
             logger.error(
-                f"Unexpected error in WebSocket broadcast task (error {consecutive_errors}/{max_consecutive_errors}): {e}",
+                f"Unexpected error in WebSocket broadcast task (error {consecutive_errors}/{_BROADCAST_MAX_CONSECUTIVE_ERRORS}): {e}",
                 exc_info=True
             )
-            if consecutive_errors >= max_consecutive_errors:
+            if consecutive_errors >= _BROADCAST_MAX_CONSECUTIVE_ERRORS:
                 logger.critical(
-                    f"WebSocket broadcast task encountered {max_consecutive_errors} consecutive errors. Terminating task."
+                    f"WebSocket broadcast task encountered {_BROADCAST_MAX_CONSECUTIVE_ERRORS} consecutive errors. Terminating task."
                 )
                 raise
             await asyncio.sleep(1.0)

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
-import { Pagination } from '../components/ui'
+import { Pagination, DataTable } from '../components/ui'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
@@ -475,36 +475,31 @@ apiFetch(`/api/jobs/${jobId}`)
       {partsList.length > 0 && (
         <details className="bg-dk-2 rounded-lg border border-dk-3 p-4 mb-6">
           <summary className="cursor-pointer font-semibold text-dk-5 hover:text-mint">Part list ({partsList.length} parts)</summary>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-dk-5 border-b border-dk-3">
-                  <th className="pb-2 pr-2 w-20">Preview</th>
-                  <th className="pb-2 pr-4">Part</th>
-                  <th className="pb-2 pr-4">Name</th>
-                  <th className="pb-2 pr-4">Qty</th>
-                  <th className="pb-2">Color</th>
-                </tr>
-              </thead>
-              <tbody className="text-dk-5">
-                {partsToShow.map((p, i) => (
-                  <tr key={(partsPage - 1) * PARTS_PAGE_SIZE + i} className="border-b border-dk-3/50">
-                    <td className="py-1.5 pr-2">
-                      <img
-                        src={`/api/parts/preview/${encodeURIComponent(p.ldraw_id || p.part_num)}?size=128${p.color_rgb ? `&color=${encodeURIComponent(p.color_rgb)}` : ''}`}
-                        alt=""
-                        className="w-12 h-12 object-contain bg-dk-1 rounded"
-                        onError={(e) => { e.target.style.display = 'none' }}
-                      />
-                    </td>
-                    <td className="py-1.5 font-mono">{p.ldraw_id || p.part_num}</td>
-                    <td className="py-1.5 truncate max-w-[200px]">{p.name}</td>
-                    <td className="py-1.5">{p.quantity}</td>
-                    <td className="py-1.5">{p.color}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <DataTable
+              columns={[
+                {
+                  key: 'preview',
+                  label: 'Preview',
+                  className: 'w-20',
+                  render: (p) => (
+                    <img
+                      src={`/api/parts/preview/${encodeURIComponent(p.ldraw_id || p.part_num)}?size=128${p.color_rgb ? `&color=${encodeURIComponent(p.color_rgb)}` : ''}`}
+                      alt=""
+                      className="w-12 h-12 object-contain bg-dk-1 rounded"
+                      onError={(e) => { e.target.style.display = 'none' }}
+                    />
+                  )
+                },
+                { key: 'ldraw_id', label: 'Part', className: 'font-mono', render: (p) => p.ldraw_id || p.part_num },
+                { key: 'name', label: 'Name', className: 'truncate max-w-[200px]' },
+                { key: 'quantity', label: 'Qty' },
+                { key: 'color', label: 'Color' }
+              ]}
+              data={partsToShow}
+              getRowKey={(p, i) => (partsPage - 1) * PARTS_PAGE_SIZE + i}
+              emptyMessage="No parts found."
+            />
             {partsTotalPages > 1 && (
               <div className="mt-2 pt-2 border-t border-dk-3">
                 <Pagination
@@ -522,25 +517,17 @@ apiFetch(`/api/jobs/${jobId}`)
         <details className="bg-dk-2 rounded-lg border border-dk-3 p-4 mb-6">
           <summary className="cursor-pointer font-semibold text-dk-5 hover:text-mint">Part &amp; color reference (for Bambu Studio / OrcaSlicer)</summary>
           <p className="mt-2 mb-3 text-sm text-dk-5/90">Use this list to assign filament to parts in your slicer. Part number format is <code className="bg-dk-1 px-1 rounded">LDrawId_instance</code> (e.g. 3404_1, 3404_2).</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-dk-5 border-b border-dk-3">
-                  <th className="pb-2 pr-4">Part number</th>
-                  <th className="pb-2 pr-4">Color</th>
-                  <th className="pb-2">Hex code</th>
-                </tr>
-              </thead>
-              <tbody className="text-dk-5">
-                {colorRefToShow.map((row) => (
-                  <tr key={row.partId} className="border-b border-dk-3/50">
-                    <td className="py-1.5 font-mono">{row.partId}</td>
-                    <td className="py-1.5">{row.color}</td>
-                    <td className="py-1.5 font-mono">{row.color_rgb !== '—' ? `#${row.color_rgb}` : row.color_rgb}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            <DataTable
+              columns={[
+                { key: 'partId', label: 'Part number', className: 'font-mono' },
+                { key: 'color', label: 'Color' },
+                { key: 'color_rgb', label: 'Hex code', className: 'font-mono', render: (row) => row.color_rgb !== '—' ? `#${row.color_rgb}` : row.color_rgb }
+              ]}
+              data={colorRefToShow}
+              getRowKey={(row) => row.partId}
+              emptyMessage="No color reference data."
+            />
             {colorRefTotalPages > 1 && (
               <div className="mt-2 pt-2 border-t border-dk-3">
                 <Pagination

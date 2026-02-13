@@ -12,8 +12,9 @@ A comprehensive JWT (JSON Web Token) authentication system has been added to sec
 - **JWT Token-based authentication** using python-jose library
 - **Password hashing** with bcrypt via passlib
 - **Secure token generation** with configurable expiration (default: 24 hours)
-- **Protected API routes** - all existing API endpoints require valid JWT tokens
+- **Protected API routes** - all HTTP API endpoints require valid JWT tokens
 - **Public endpoints** - `/api/login` and `/api/verify` remain public for authentication
+- **WebSocket support** - WebSocket connections for real-time job progress updates work without auth blocking
 - **HTTPBearer security scheme** for standardized token validation
 
 ### Frontend Authentication
@@ -208,6 +209,8 @@ python -m pytest tests/test_auth.py tests/test_auth_routes.py -v
 - `backend/api/routes/auth.py` - Login and verification endpoints
 - `backend/config.py` - Configuration including auth settings
 - `backend/models/schemas.py` - Authentication request/response models
+
+**Technical Note:** Authentication is applied at the route level rather than router level to allow WebSocket endpoints to function without HTTP-based authentication. WebSocket routes (`/api/jobs/{job_id}/ws`) for real-time progress updates are exempt from JWT authentication requirements since WebSockets use a different protocol that doesn't support HTTPBearer.
 
 ### Frontend Files
 - `frontend/src/pages/LoginPage.jsx` - Login UI component

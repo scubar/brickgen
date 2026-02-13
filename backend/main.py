@@ -47,14 +47,13 @@ app.add_middleware(
 # Auth routes (no authentication required for login)
 app.include_router(auth.router, prefix=settings.api_prefix, tags=["auth"])
 
-# Protected API routes (require authentication)
-from fastapi import Depends
-app.include_router(search.router, prefix=settings.api_prefix, tags=["search"], dependencies=[Depends(get_current_user)])
-app.include_router(generate.router, prefix=settings.api_prefix, tags=["generate"], dependencies=[Depends(get_current_user)])
-app.include_router(download.router, prefix=settings.api_prefix, tags=["download"], dependencies=[Depends(get_current_user)])
-app.include_router(settings_routes.router, prefix=settings.api_prefix, tags=["settings"], dependencies=[Depends(get_current_user)])
-app.include_router(projects.router, prefix=settings.api_prefix, tags=["projects"], dependencies=[Depends(get_current_user)])
-app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"], dependencies=[Depends(get_current_user)])
+# Protected API routes (authentication applied at route level to exclude WebSocket routes)
+app.include_router(search.router, prefix=settings.api_prefix, tags=["search"])
+app.include_router(generate.router, prefix=settings.api_prefix, tags=["generate"])
+app.include_router(download.router, prefix=settings.api_prefix, tags=["download"])
+app.include_router(settings_routes.router, prefix=settings.api_prefix, tags=["settings"])
+app.include_router(projects.router, prefix=settings.api_prefix, tags=["projects"])
+app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"])
 
 @app.on_event("startup")
 async def startup_event():

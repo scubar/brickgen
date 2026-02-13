@@ -10,6 +10,7 @@ from backend.core.stl_processing import STLConverter
 from backend.core.stl_render import render_stl_to_png
 from sqlalchemy.orm import Session
 from backend.database import get_db
+from backend.auth import get_current_user
 from backend.api.routes.settings import sync_config_from_db
 
 logger = logging.getLogger(__name__)

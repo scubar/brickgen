@@ -6,13 +6,18 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from backend.database import get_db, Job
 from backend.config import settings
+from backend.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.get("/download/{job_id}")
-async def download_3mf(job_id: str, db: Session = Depends(get_db)):
+async def download_3mf(
+    job_id: str, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Download generated 3MF file."""
     job = db.query(Job).filter(Job.id == job_id).first()
     

@@ -74,6 +74,9 @@ function DocumentationPage() {
 
       <DocSection title="Settings">
         <p className="mb-2">Access from the <strong>Settings</strong> link in the header. Five tabs are available; the Cache and Database tabs have dedicated URLs (<code className="bg-dk-3 px-1 rounded">/settings/cache</code>, <code className="bg-dk-3 px-1 rounded">/settings/database</code>).</p>
+        <DocNote variant="info" title="LDraw library indicator">
+          When the LDraw library is not downloaded, an exclamation icon (!) appears on the Settings button in the header. Hover over the Settings button to see the message. Download the library from the <strong>Cache</strong> tab in Settings.
+        </DocNote>
         <ul className="list-disc list-inside space-y-2">
           <li><strong>General</strong> — Rebrickable API key (write-only; enter a new key to update). Part previews: option to auto-generate part previews, with a link to manage the part-preview cache. System paths (read-only): LDraw library path, cache directory, database path; these are set via environment variables.</li>
           <li><strong>Part</strong> — Build plate size (width, depth, height in mm) and part spacing. Part rotation: enable global rotation and set X/Y/Z degrees; option to match default orientation to preview (studs up). STL scaling factor (0.01–10, default 1.0).</li>

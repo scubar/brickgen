@@ -9,6 +9,7 @@
  * @param {Function} rowActions - Function that returns action elements for each row: (row) => <>{actions}</>
  * @param {Function} expandedContent - Function that returns expanded content for each row: (row) => <>{content}</>
  */
+import React from 'react'
 import LoadingSpinner from './LoadingSpinner'
 
 export default function DataTable({ 
@@ -60,34 +61,39 @@ export default function DataTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-dk-3">
-          {data.map((row, index) => (
-            <>
-              <tr key={getRowKey(row, index)} className="hover:bg-dk-3/50 transition">
-                {columns.map((column, colIndex) => (
-                  <td
-                    key={column.key || colIndex}
-                    className={`px-4 py-3 text-sm text-dk-5 ${column.className || ''}`}
-                  >
-                    {column.render ? column.render(row) : row[column.key]}
-                  </td>
-                ))}
-                {rowActions && (
-                  <td className="px-4 py-3 text-sm text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {rowActions(row)}
-                    </div>
-                  </td>
-                )}
-              </tr>
-              {expandedContent && expandedContent(row) && (
-                <tr key={`${getRowKey(row, index)}-expanded`}>
-                  <td colSpan={colSpan} className="px-4 py-3 bg-dk-1/30">
-                    {expandedContent(row)}
-                  </td>
+          {data.map((row, index) => {
+            const key = getRowKey(row, index)
+            const expanded = expandedContent ? expandedContent(row) : null
+            
+            return (
+              <React.Fragment key={key}>
+                <tr className="hover:bg-dk-3/50 transition">
+                  {columns.map((column, colIndex) => (
+                    <td
+                      key={column.key || colIndex}
+                      className={`px-4 py-3 text-sm text-dk-5 ${column.className || ''}`}
+                    >
+                      {column.render ? column.render(row) : row[column.key]}
+                    </td>
+                  ))}
+                  {rowActions && (
+                    <td className="px-4 py-3 text-sm text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {rowActions(row)}
+                      </div>
+                    </td>
+                  )}
                 </tr>
-              )}
-            </>
-          ))}
+                {expanded && (
+                  <tr>
+                    <td colSpan={colSpan} className="px-4 py-3 bg-dk-1/30">
+                      {expanded}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            )
+          })}
         </tbody>
       </table>
     </div>

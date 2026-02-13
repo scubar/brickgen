@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
-import { Pagination, DataTable, LoadingState, EmptyState, ProgressBar } from '../components/ui'
+import { Pagination, DataTable, LoadingState, EmptyState, ProgressBar, Badge, Button } from '../components/ui'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
@@ -506,6 +506,7 @@ apiFetch(`/api/jobs/${jobId}`)
                   page={partsPage}
                   totalPages={partsTotalPages}
                   onPageChange={setPartsPage}
+                  totalCount={partsList.length}
                 />
               </div>
             )}
@@ -534,6 +535,7 @@ apiFetch(`/api/jobs/${jobId}`)
                   page={colorRefPage}
                   totalPages={colorRefTotalPages}
                   onPageChange={setColorRefPage}
+                  totalCount={partColorRefList.length}
                 />
               </div>
             )}
@@ -553,42 +555,71 @@ apiFetch(`/api/jobs/${jobId}`)
         {jobs.length === 0 ? (
           <EmptyState message='No jobs yet. Click "New job" to create one (wizard will guide you through settings).' />
         ) : (
-          <ul className="divide-y divide-dk-3">
-            {jobs.map((j) => (
-              <li key={j.job_id} className="py-4 first:pt-0">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>{j.job_id.slice(0, 8)}…</code>
-                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : j.status === 'cancelled' ? 'bg-amber-500/20 text-amber-400' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
-                      {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
-                        <span className="text-amber-400 text-xs">(different version)</span>
-                      )}
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-dk-5/80">
-                      <span>Created {new Date(j.created_at).toLocaleString()}</span>
-                      {j.brickgen_version && <span>BrickGen {j.brickgen_version}</span>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {j.status === 'completed' && j.output_file && (
-                      <a href={`/api/download/${j.job_id}`} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
-                    )}
-                    {TERMINAL_JOB_STATUSES.includes(j.status) && (
-                      <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
-                    )}
-                    {j.output_file && (
-                      <button onClick={() => deleteJobFiles(j.job_id)} className="px-3 py-1 text-dk-5 border border-dk-3 rounded text-sm hover:bg-dk-3">Clear files</button>
-                    )}
-                    {!TERMINAL_JOB_STATUSES.includes(j.status) ? (
-                      <button onClick={() => cancelJob(j.job_id)} disabled={cancellingJobId === j.job_id} className="px-3 py-1 text-amber-400 hover:text-amber-300 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{cancellingJobId === j.job_id ? 'Cancelling…' : 'Cancel job'}</button>
-                    ) : (
-                      <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}</button>
+          <DataTable
+            columns={[
+              {
+                key: 'job_id',
+                label: 'Job ID',
+                render: (j) => (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>
+                      {j.job_id.slice(0, 8)}…
+                    </code>
+                    <Badge 
+                      variant={
+                        j.status === 'completed' ? 'success' : 
+                        j.status === 'failed' ? 'danger' : 
+                        j.status === 'cancelled' ? 'warning' : 
+                        'default'
+                      }
+                    >
+                      {j.status}
+                    </Badge>
+                    {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
+                      <span className="text-amber-400 text-xs">(different version)</span>
                     )}
                   </div>
-                </div>
+                )
+              },
+              {
+                key: 'created_at',
+                label: 'Details',
+                render: (j) => (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-dk-5/80">
+                    <span>Created {new Date(j.created_at).toLocaleString()}</span>
+                    {j.brickgen_version && <span>BrickGen {j.brickgen_version}</span>}
+                  </div>
+                )
+              }
+            ]}
+            data={jobs}
+            getRowKey={(j) => j.job_id}
+            rowActions={(j) => (
+              <>
+                {j.status === 'completed' && j.output_file && (
+                  <a href={`/api/download/${j.job_id}`} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
+                )}
+                {TERMINAL_JOB_STATUSES.includes(j.status) && (
+                  <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
+                )}
+                {j.output_file && (
+                  <button onClick={() => deleteJobFiles(j.job_id)} className="px-3 py-1 text-dk-5 border border-dk-3 rounded text-sm hover:bg-dk-3">Clear files</button>
+                )}
+                {!TERMINAL_JOB_STATUSES.includes(j.status) ? (
+                  <button onClick={() => cancelJob(j.job_id)} disabled={cancellingJobId === j.job_id} className="px-3 py-1 text-amber-400 hover:text-amber-300 hover:bg-dk-3 rounded text-sm disabled:opacity-50">
+                    {cancellingJobId === j.job_id ? 'Cancelling…' : 'Cancel job'}
+                  </button>
+                ) : (
+                  <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">
+                    {deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}
+                  </button>
+                )}
+              </>
+            )}
+            expandedContent={(j) => (
+              <>
                 {(j.status === 'processing' || j.status === 'pending') && j.progress !== undefined && (
-                  <div className="mt-2">
+                  <div className="mb-2">
                     <ProgressBar value={j.progress} label={`Progress: ${j.progress}%`} />
                     {j.log && (
                       <p className="mt-1.5 text-xs font-mono text-dk-5/90 truncate" title={j.log.trim()}>
@@ -601,17 +632,17 @@ apiFetch(`/api/jobs/${jobId}`)
                   </div>
                 )}
                 {j.status === 'failed' && j.error_message && (
-                  <p className="mt-2 text-sm text-danger">Error: {j.error_message}</p>
+                  <p className="mb-2 text-sm text-danger">Error: {j.error_message}</p>
                 )}
                 {(j.log || j.status === 'completed' || j.status === 'failed') && (
-                  <details className="mt-2">
+                  <details>
                     <summary className="text-sm text-dk-5 cursor-pointer hover:text-mint">Job log</summary>
                     <pre className="mt-1 p-2 bg-dk-1 rounded text-xs text-left overflow-x-auto whitespace-pre-wrap font-mono text-dk-5">{j.log || 'No log entries.'}</pre>
                   </details>
                 )}
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          />
         )}
       </div>
 
@@ -747,6 +778,7 @@ apiFetch(`/api/jobs/${jobId}`)
                       page={wizardPartsPage}
                       totalPages={wizardPartsTotalPages}
                       onPageChange={setWizardPartsPage}
+                      totalCount={wizardParts.length}
                     />
                   )}
                 </div>

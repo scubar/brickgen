@@ -24,54 +24,48 @@ logger = logging.getLogger(__name__)
 
 # Validate authentication credentials are configured
 def validate_auth_credentials():
-    """Ensure authentication credentials are not using default insecure values."""
-    insecure_usernames = ["admin"]
-    insecure_passwords = ["changeme"]
+    """Display warning if default authentication credentials are being used."""
+    insecure_usernames = ["brickgen"]
+    insecure_passwords = ["brickgen"]
     insecure_jwt_secrets = [
         "dev_secret_key_change_in_production",
         "your_secret_key_here_change_in_production"
     ]
     
-    errors = []
+    warnings = []
     
     if settings.auth_username in insecure_usernames:
-        errors.append(
+        warnings.append(
             f"AUTH_USERNAME is set to default value '{settings.auth_username}'. "
-            "Please set a custom username in your .env file."
+            "Consider changing it in your .env file for better security."
         )
     
     if settings.auth_password in insecure_passwords:
-        errors.append(
+        warnings.append(
             f"AUTH_PASSWORD is set to default value '{settings.auth_password}'. "
-            "Please set a secure password in your .env file."
+            "Consider changing it in your .env file for better security."
         )
     
     if settings.jwt_secret_key in insecure_jwt_secrets:
-        errors.append(
+        warnings.append(
             "JWT_SECRET_KEY is set to a default value. "
-            "Please generate a secure secret key (e.g., using 'openssl rand -hex 32') "
-            "and set it in your .env file."
+            "Consider generating a secure secret key (e.g., using 'openssl rand -hex 32') "
+            "and setting it in your .env file for better security."
         )
     
-    if errors:
-        error_msg = "\n\n" + "=" * 80 + "\n"
-        error_msg += "SECURITY ERROR: Insecure authentication configuration detected!\n"
-        error_msg += "=" * 80 + "\n\n"
-        for error in errors:
-            error_msg += f"  • {error}\n"
-        error_msg += "\n"
-        error_msg += "Application startup aborted. Please fix your .env file with secure values.\n"
-        error_msg += "After fixing, restart the container with: docker-compose up -d\n"
-        error_msg += "=" * 80 + "\n"
+    if warnings:
+        warning_msg = "\n" + "=" * 80 + "\n"
+        warning_msg += "⚠️  SECURITY WARNING: Default authentication credentials detected\n"
+        warning_msg += "=" * 80 + "\n"
+        for warning in warnings:
+            warning_msg += f"  • {warning}\n"
+        warning_msg += "\n"
+        warning_msg += "The application will start, but consider updating these values for production use.\n"
+        warning_msg += "=" * 80 + "\n"
         
-        # Use logger.critical for fatal errors
-        logger.critical(error_msg)
-        
-        # Exit with code 1 to indicate configuration error
-        # Container will NOT automatically restart (restart policy is "no")
-        sys.exit(1)
+        logger.warning(warning_msg)
 
-# Validate credentials before initializing anything
+# Check credentials and display warning if defaults are used
 validate_auth_credentials()
 
 # Task reference for the WebSocket broadcast task

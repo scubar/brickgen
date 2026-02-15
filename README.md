@@ -50,15 +50,13 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 2. **Configure environment**
    ```bash
    cp .env.example .env
-   # Edit .env and change ALL required values:
-   # - Your Rebrickable API key
-   # - Authentication credentials (MUST change from defaults)
-   # - A secure JWT secret key (MUST change from default)
+   # Edit .env and set your values:
+   # - Your Rebrickable API key (required)
+   # - Authentication credentials (default: brickgen/brickgen)
+   # - A secure JWT secret key (recommended for production)
    ```
    
-   **⚠️ IMPORTANT**: The application will **not start** if you leave the default authentication credentials (`admin`/`changeme`) or the default JWT secret key. You must set secure values before running.
-   
-   If you see configuration errors in the logs, fix the configuration in your `.env` file and restart with `docker-compose up -d`. The container will not restart automatically on configuration errors.
+   **Note**: Default credentials are `brickgen`/`brickgen`. You'll see a warning on startup if you use defaults. Consider changing them for production deployments.
 
 3. **Build and run with Docker Compose**
    ```bash

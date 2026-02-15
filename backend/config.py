@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     rebrickable_api_key: str = Field(default="", validation_alias="REBRICKABLE_API_KEY")
     
     # Authentication
-    auth_username: str = Field(default="admin", validation_alias="AUTH_USERNAME")
-    auth_password: str = Field(default="changeme", validation_alias="AUTH_PASSWORD")
+    auth_username: str = Field(default="brickgen", validation_alias="AUTH_USERNAME")
+    auth_password: str = Field(default="brickgen", validation_alias="AUTH_PASSWORD")
     jwt_secret_key: str = Field(default="dev_secret_key_change_in_production", validation_alias="JWT_SECRET_KEY")
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 1440  # 24 hours

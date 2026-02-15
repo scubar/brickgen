@@ -100,6 +100,7 @@ class AppSettings(Base):
     ldview_sort_transparent = Column(Boolean, default=True)
     ldview_use_stipple = Column(Boolean, default=False)
     ldview_memory_usage = Column(Integer, default=2)
+    onboarding_wizard_complete = Column(Boolean, default=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

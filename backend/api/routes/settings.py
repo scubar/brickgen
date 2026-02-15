@@ -94,6 +94,7 @@ def _row_to_response(row: AppSettings) -> SettingsResponse:
         ldview_sort_transparent=_get_bool(row, "ldview_sort_transparent", True),
         ldview_use_stipple=_get_bool(row, "ldview_use_stipple", False),
         ldview_memory_usage=_get_int(row, "ldview_memory_usage", 2),
+        onboarding_wizard_complete=_get_bool(row, "onboarding_wizard_complete", False),
     )
 
 
@@ -195,6 +196,7 @@ async def get_settings(db: Session = Depends(get_db)):
         ldview_sort_transparent=getattr(settings, "ldview_sort_transparent", True),
         ldview_use_stipple=getattr(settings, "ldview_use_stipple", False),
         ldview_memory_usage=getattr(settings, "ldview_memory_usage", 2),
+        onboarding_wizard_complete=False,
     )
 
 
@@ -300,6 +302,9 @@ async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db))
         v = getattr(update, attr, None)
         if v is not None and hasattr(row, attr):
             setattr(row, attr, v)
+
+    if update.onboarding_wizard_complete is not None:
+        row.onboarding_wizard_complete = update.onboarding_wizard_complete
 
     if any_ldview_update and not cache_cleared:
         try:

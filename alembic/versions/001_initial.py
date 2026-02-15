@@ -120,6 +120,7 @@ def upgrade() -> None:
             sa.Column("ldview_sort_transparent", sa.Boolean(), nullable=True),
             sa.Column("ldview_use_stipple", sa.Boolean(), nullable=True),
             sa.Column("ldview_memory_usage", sa.Integer(), nullable=True),
+            sa.Column("onboarding_wizard_complete", sa.Boolean(), nullable=True),
             sa.Column("updated_at", sa.DateTime(), nullable=True),
             sa.PrimaryKeyConstraint("id"),
         )
@@ -136,11 +137,11 @@ def upgrade() -> None:
             "ldview_aniso_level, ldview_texture_offset_factor, ldview_lighting, ldview_use_quality_lighting, "
             "ldview_use_specular, ldview_subdued_lighting, ldview_perform_smoothing, ldview_use_flat_shading, "
             "ldview_antialias, ldview_process_ldconfig, ldview_sort_transparent, ldview_use_stipple, ldview_memory_usage, "
-            "updated_at"
+            "onboarding_wizard_complete, updated_at"
             ") VALUES ("
             "1, 250, 250, 250, 2, 1.0, 0, 0.0, 0.0, 0.0, 1, 1, "
             "1, 1, 2, 0, 0, 1, 0, 0, 1, 0.0, 0, 0, 0, 0, 0.0, 0, 1, 1, 0, 9987, "
-            "0, 5.0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 2, CURRENT_TIMESTAMP)"
+            "0, 5.0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 2, 0, CURRENT_TIMESTAMP)"
         )
 
     if "stl_cache" not in existing:

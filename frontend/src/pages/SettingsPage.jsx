@@ -431,6 +431,31 @@ function SettingsPage() {
                   </p>
                 </div>
               </div>
+
+              <div className="pt-6 border-t border-dk-3">
+                <h2 className="text-xl font-bold mb-4 text-dk-5">Onboarding Wizard</h2>
+                <p className="text-sm text-dk-5/80 mb-4">
+                  Rerun the onboarding wizard to go through the initial setup guide again. This will cover LDraw library download, settings configuration, and project creation.
+                </p>
+                <button
+                  onClick={async () => {
+                    if (!confirm('Restart the onboarding wizard? This will reset the completion status.')) return
+                    try {
+                      await apiFetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ onboarding_wizard_complete: false })
+                      })
+                      window.location.reload()
+                    } catch (e) {
+                      setMessage({ type: 'error', text: 'Failed to restart wizard' })
+                    }
+                  }}
+                  className="px-6 py-2 bg-dk-3 text-dk-5 rounded hover:bg-mint hover:text-dk-1 transition font-semibold"
+                >
+                  Restart Wizard
+                </button>
+              </div>
             </div>
           )}
 

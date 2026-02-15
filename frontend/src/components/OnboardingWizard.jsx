@@ -182,6 +182,55 @@ function OnboardingWizard({ onComplete }) {
       highlight: 'settings'
     },
     {
+      title: 'Create Your First Project',
+      content: (
+        <div className="space-y-4">
+          <p className="text-dk-5/90">
+            Projects let you organize and generate STL files for LEGO sets. Let's create your first one!
+          </p>
+          <div className="p-4 rounded-lg bg-dk-3/50 border border-dk-3">
+            <p className="text-sm text-dk-5/90 mb-3">
+              <strong>How it works:</strong>
+            </p>
+            <ol className="text-sm text-dk-5/80 space-y-2 list-decimal list-inside">
+              <li>Search for a LEGO set on the home page</li>
+              <li>Click on a set to view its details</li>
+              <li>Enter a project name and click "Create project"</li>
+              <li>Configure settings and generate STL files</li>
+            </ol>
+          </div>
+          <div className="p-4 rounded-lg bg-mint/10 border border-mint/30">
+            <div className="flex items-start gap-2">
+              <span className="text-lg text-mint">💡</span>
+              <div>
+                <p className="text-sm font-medium text-dk-5 mb-1">Pro tip</p>
+                <p className="text-sm text-dk-5/80">
+                  You can create multiple projects for the same set with different settings to compare results.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={() => {
+                handleComplete()
+                navigate('/')
+              }}
+              className="flex-1 px-6 py-3 bg-mint text-dk-1 rounded-lg font-medium hover:opacity-90 transition"
+            >
+              Go to Search
+            </button>
+            <button
+              onClick={() => setCurrentStep(4)}
+              className="flex-1 px-6 py-3 bg-dk-3 text-dk-5 rounded-lg hover:bg-dk-3/80 transition"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )
+    },
+    {
       title: `You're All Set! 🎉`,
       content: (
         <div className="space-y-4">
@@ -190,14 +239,14 @@ function OnboardingWizard({ onComplete }) {
           </p>
           <div className="p-4 rounded-lg bg-dk-3/50 border border-dk-3">
             <p className="text-sm text-dk-5/90 mb-3">
-              <strong>Next steps:</strong>
+              <strong>Quick recap:</strong>
             </p>
-            <ol className="text-sm text-dk-5/80 space-y-2 list-decimal list-inside">
-              <li>Search for a LEGO set on the home page</li>
-              <li>Create a project from the set details</li>
-              <li>Generate STL files from your project</li>
-              <li>Download and print!</li>
-            </ol>
+            <ul className="text-sm text-dk-5/80 space-y-2 list-disc list-inside">
+              <li>LDraw library is ready for part conversion</li>
+              <li>Settings are configured (customizable anytime)</li>
+              <li>Projects help you organize your builds</li>
+              <li>Each project can have multiple generation jobs</li>
+            </ul>
           </div>
           <button
             onClick={handleComplete}

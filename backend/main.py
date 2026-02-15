@@ -21,6 +21,54 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Validate authentication credentials are configured
+def validate_auth_credentials():
+    """Ensure authentication credentials are not using default insecure values."""
+    insecure_usernames = ["admin"]
+    insecure_passwords = ["changeme"]
+    insecure_jwt_secrets = [
+        "dev_secret_key_change_in_production",
+        "your_secret_key_here_change_in_production"
+    ]
+    
+    errors = []
+    
+    if settings.auth_username in insecure_usernames:
+        errors.append(
+            f"AUTH_USERNAME is set to default value '{settings.auth_username}'. "
+            "Please set a custom username in your .env file."
+        )
+    
+    if settings.auth_password in insecure_passwords:
+        errors.append(
+            f"AUTH_PASSWORD is set to default value '{settings.auth_password}'. "
+            "Please set a secure password in your .env file."
+        )
+    
+    if settings.jwt_secret_key in insecure_jwt_secrets:
+        errors.append(
+            "JWT_SECRET_KEY is set to a default value. "
+            "Please generate a secure secret key (e.g., using 'openssl rand -hex 32') "
+            "and set it in your .env file."
+        )
+    
+    if errors:
+        error_msg = "\n\n" + "=" * 80 + "\n"
+        error_msg += "SECURITY ERROR: Insecure authentication configuration detected!\n"
+        error_msg += "=" * 80 + "\n\n"
+        for error in errors:
+            error_msg += f"  • {error}\n"
+        error_msg += "\n"
+        error_msg += "Application will not start until secure credentials are configured.\n"
+        error_msg += "Please update your .env file with secure values.\n"
+        error_msg += "=" * 80 + "\n"
+        
+        logger.error(error_msg)
+        raise RuntimeError("Application startup aborted due to insecure authentication configuration")
+
+# Validate credentials before initializing anything
+validate_auth_credentials()
+
 # Task reference for the WebSocket broadcast task
 _broadcast_task = None
 

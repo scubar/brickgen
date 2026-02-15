@@ -41,9 +41,26 @@ JWT_SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
 ```
 
 **Important Security Notes:**
-1. Change the default username and password
-2. Generate a strong, random JWT secret key for production
+1. **The application will NOT start with default credentials** - You MUST change the default username (`admin`), password (`changeme`), and JWT secret key before the container will start
+2. Generate a strong, random JWT secret key using: `openssl rand -hex 32`
 3. Keep your `.env` file secure and never commit it to version control
+
+### Startup Validation
+
+BrickGen includes startup validation to prevent insecure deployments. The application will refuse to start if:
+- `AUTH_USERNAME` is set to `admin` (default value)
+- `AUTH_PASSWORD` is set to `changeme` (default value)
+- `JWT_SECRET_KEY` is set to any default value
+
+If validation fails, you'll see an error message like:
+
+```
+SECURITY ERROR: Insecure authentication configuration detected!
+  • AUTH_USERNAME is set to default value 'admin'. Please set a custom username in your .env file.
+  • AUTH_PASSWORD is set to default value 'changeme'. Please set a secure password in your .env file.
+
+Application will not start until secure credentials are configured.
+```
 
 ## Usage
 
@@ -54,7 +71,7 @@ JWT_SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
    cp .env.example .env
    ```
 
-2. Edit `.env` and set your credentials:
+2. Edit `.env` and set your credentials (**REQUIRED**):
    ```bash
    AUTH_USERNAME=your_username
    AUTH_PASSWORD=your_secure_password

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
+import { LoadingState, EmptyState } from '../components/ui'
 
 function ProjectsPage() {
   const [projects, setProjects] = useState([])
@@ -37,7 +38,7 @@ function ProjectsPage() {
     }
   }
 
-  if (loading) return <div className="text-center py-8 text-dk-5">Loading...</div>
+  if (loading) return <LoadingState />
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -49,7 +50,7 @@ function ProjectsPage() {
       </button>
       <h1 className="text-2xl font-bold mb-6 text-dk-5">Projects</h1>
       {projects.length === 0 ? (
-        <p className="text-dk-5">No projects yet. Create one from a set detail page.</p>
+        <EmptyState message="No projects yet. Create one from a set detail page." />
       ) : (
         <div className="grid gap-4">
           {projects.map((p) => (

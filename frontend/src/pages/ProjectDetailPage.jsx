@@ -399,6 +399,46 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
+  const downloadFile = async (jobId) => {
+    try {
+      const response = await fetch(`/api/download/${jobId}`)
+      if (!response.ok) {
+        console.error('Download failed:', response.statusText)
+        return
+      }
+      
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition')
+      let defaultFilename = 'download'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/i)
+        if (filenameMatch) {
+          defaultFilename = filenameMatch[1]
+        }
+      }
+      
+      // Prompt user for filename
+      const customFilename = prompt('Enter filename for download:', defaultFilename)
+      if (!customFilename) {
+        // User cancelled
+        return
+      }
+      
+      // Create blob and download
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = customFilename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (e) {
+      console.error('Download error:', e)
+    }
+  }
+
   const deleteJobFiles = async (jobId) => {
     if (!confirm('Remove this job\'s output file from disk?')) return
     try {
@@ -597,7 +637,7 @@ apiFetch(`/api/jobs/${jobId}`)
             rowActions={(j) => (
               <>
                 {j.status === 'completed' && j.output_file && (
-                  <a href={`/api/download/${j.job_id}`} download className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
+                  <button onClick={() => downloadFile(j.job_id)} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</button>
                 )}
                 {TERMINAL_JOB_STATUSES.includes(j.status) && (
                   <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>

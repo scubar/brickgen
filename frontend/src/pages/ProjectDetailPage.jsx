@@ -424,12 +424,18 @@ apiFetch(`/api/jobs/${jobId}`)
         return
       }
       
+      // Sanitize filename - remove path traversal and other dangerous characters
+      const sanitizedFilename = customFilename
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+        .replace(/^\.+/, '_')
+        .trim() || 'download'
+      
       // Create blob and download
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = customFilename
+      a.download = sanitizedFilename
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)

@@ -303,6 +303,7 @@ async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db))
         if v is not None and hasattr(row, attr):
             setattr(row, attr, v)
 
+    # Onboarding completion flag - handled separately as it doesn't affect cache or require validation
     if update.onboarding_wizard_complete is not None:
         row.onboarding_wizard_complete = update.onboarding_wizard_complete
 

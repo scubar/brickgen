@@ -182,7 +182,7 @@ function OnboardingWizard({ onComplete }) {
       highlight: 'settings'
     },
     {
-      title: 'You\'re All Set! 🎉',
+      title: `You're All Set! 🎉`,
       content: (
         <div className="space-y-4">
           <p className="text-dk-5/90">

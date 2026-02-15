@@ -3,46 +3,12 @@ import pytest
 from datetime import timedelta
 from jose import jwt
 from backend.auth import (
-    verify_password,
-    get_password_hash,
     create_access_token,
     verify_token,
     authenticate_user,
 )
 from backend.config import settings
 from fastapi import HTTPException
-
-
-class TestPasswordHashing:
-    """Tests for password hashing functions."""
-
-    def test_hash_and_verify_password(self):
-        """Test that hashing and verification works correctly."""
-        plain_password = "test_password_123"
-        hashed = get_password_hash(plain_password)
-        
-        # Hash should be different from plain password
-        assert hashed != plain_password
-        
-        # Verification should succeed with correct password
-        assert verify_password(plain_password, hashed) is True
-        
-        # Verification should fail with incorrect password
-        assert verify_password("wrong_password", hashed) is False
-
-    def test_same_password_different_hashes(self):
-        """Test that the same password produces different hashes (salt)."""
-        password = "test_password"
-        hash1 = get_password_hash(password)
-        hash2 = get_password_hash(password)
-        
-        # Hashes should be different due to salt
-        assert hash1 != hash2
-        
-        # Both should verify correctly
-        assert verify_password(password, hash1) is True
-        assert verify_password(password, hash2) is True
-
 
 class TestJWTTokens:
     """Tests for JWT token creation and verification."""

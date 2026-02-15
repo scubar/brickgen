@@ -23,9 +23,9 @@ services:
       - LDRAW_LIBRARY_PATH=/app/data/ldraw
       - CACHE_DIR=/app/cache
       - DATABASE_PATH=/app/database/brickgen.db
-    # Restart on failure to recover from transient issues
-    # Configuration errors will cause exit(1) and eventual stop after retries
-    restart: on-failure
+    # No automatic restart - configuration errors require manual intervention
+    # Users should fix their .env file and explicitly restart with: docker-compose up -d
+    restart: "no"
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
       interval: 30s

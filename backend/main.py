@@ -60,15 +60,15 @@ def validate_auth_credentials():
         for error in errors:
             error_msg += f"  • {error}\n"
         error_msg += "\n"
-        error_msg += "Application startup aborted. Please update your .env file with secure values.\n"
-        error_msg += "The container will not restart until the configuration is fixed.\n"
+        error_msg += "Application startup aborted. Please fix your .env file with secure values.\n"
+        error_msg += "After fixing, restart the container with: docker-compose up -d\n"
         error_msg += "=" * 80 + "\n"
         
         # Use logger.critical for fatal errors
         logger.critical(error_msg)
         
-        # Exit cleanly with error code 1
-        # This prevents infinite restart loops in Docker by providing a clear exit
+        # Exit with code 1 to indicate configuration error
+        # Container will NOT automatically restart (restart policy is "no")
         sys.exit(1)
 
 # Validate credentials before initializing anything

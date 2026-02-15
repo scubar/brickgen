@@ -1,20 +1,48 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
 
 /**
  * OnboardingWizard - Interactive overlay that guides users through initial setup
  * Shows on first visit, tracks completion in database
+ * Guides user through creating their first project
  */
 function OnboardingWizard({ onComplete }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [currentStep, setCurrentStep] = useState(0)
   const [ldrawStats, setLdrawStats] = useState(null)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [projectCreated, setProjectCreated] = useState(false)
 
   useEffect(() => {
     checkLdrawStatus()
   }, [])
+
+  // Check if user has created a project (poll /api/projects)
+  useEffect(() => {
+    if (currentStep >= 4 && !projectCreated) {
+      const checkProjects = async () => {
+        try {
+          const r = await apiFetch('/api/projects')
+          if (r.ok) {
+            const projects = await r.json()
+            if (projects && projects.length > 0) {
+              setProjectCreated(true)
+              // Auto-advance to completion step after project creation
+              setCurrentStep(6)
+            }
+          }
+        } catch (e) {
+          console.error('Failed to check projects:', e)
+        }
+      }
+      
+      // Poll every 2 seconds while on project creation steps
+      const interval = setInterval(checkProjects, 2000)
+      return () => clearInterval(interval)
+    }
+  }, [currentStep, projectCreated])
 
   const checkLdrawStatus = async () => {
     try {
@@ -186,26 +214,25 @@ function OnboardingWizard({ onComplete }) {
       content: (
         <div className="space-y-4">
           <p className="text-dk-5/90">
-            Projects let you organize and generate STL files for LEGO sets. Let's create your first one!
+            Now let's create your first project! Projects let you organize and generate STL files for LEGO sets.
           </p>
           <div className="p-4 rounded-lg bg-dk-3/50 border border-dk-3">
             <p className="text-sm text-dk-5/90 mb-3">
-              <strong>How it works:</strong>
+              <strong>We'll guide you through:</strong>
             </p>
             <ol className="text-sm text-dk-5/80 space-y-2 list-decimal list-inside">
-              <li>Search for a LEGO set on the home page</li>
-              <li>Click on a set to view its details</li>
-              <li>Enter a project name and click "Create project"</li>
-              <li>Configure settings and generate STL files</li>
+              <li>Searching for a LEGO set</li>
+              <li>Viewing the set details</li>
+              <li>Creating a project from the set</li>
             </ol>
           </div>
           <div className="p-4 rounded-lg bg-mint/10 border border-mint/30">
             <div className="flex items-start gap-2">
-              <span className="text-lg text-mint">💡</span>
+              <span className="text-lg text-mint">📝</span>
               <div>
-                <p className="text-sm font-medium text-dk-5 mb-1">Pro tip</p>
+                <p className="text-sm font-medium text-dk-5 mb-1">Don't worry!</p>
                 <p className="text-sm text-dk-5/80">
-                  You can create multiple projects for the same set with different settings to compare results.
+                  This wizard will stay with you and guide you through each step.
                 </p>
               </div>
             </div>
@@ -213,46 +240,134 @@ function OnboardingWizard({ onComplete }) {
           <div className="flex gap-3 mt-6">
             <button
               onClick={() => {
-                handleComplete()
+                setCurrentStep(4)
                 navigate('/')
               }}
               className="flex-1 px-6 py-3 bg-mint text-dk-1 rounded-lg font-medium hover:opacity-90 transition"
             >
-              Go to Search
+              Let's Get Started!
             </button>
             <button
-              onClick={() => setCurrentStep(4)}
-              className="flex-1 px-6 py-3 bg-dk-3 text-dk-5 rounded-lg hover:bg-dk-3/80 transition"
+              onClick={() => setCurrentStep(6)}
+              className="px-6 py-3 bg-dk-3 text-dk-5/80 rounded-lg hover:bg-dk-3/80 transition"
             >
-              Continue
+              Skip This
             </button>
           </div>
         </div>
       )
     },
     {
+      title: 'Step 1: Search for a Set',
+      content: (
+        <div className="space-y-4">
+          <p className="text-dk-5/90">
+            Use the search box below to find a LEGO set. You can search by set name or set number.
+          </p>
+          <div className="p-4 rounded-lg bg-mint/10 border border-mint/30">
+            <div className="flex items-start gap-2">
+              <span className="text-lg text-mint">💡</span>
+              <div>
+                <p className="text-sm font-medium text-dk-5 mb-1">Quick tip</p>
+                <p className="text-sm text-dk-5/80">
+                  For best results, try searching by the set number (e.g., "21348-1"). You can find set numbers on{' '}
+                  <a href="https://rebrickable.com" target="_blank" rel="noopener noreferrer" className="text-mint hover:underline">
+                    Rebrickable
+                  </a>.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-sm text-dk-5/80">
+              👇 Use the search box below to find a set
+            </p>
+          </div>
+        </div>
+      ),
+      showOnPages: ['/']
+    },
+    {
+      title: 'Step 2: View Set Details',
+      content: (
+        <div className="space-y-4">
+          <p className="text-dk-5/90">
+            Great! Now click on a set from the results to view its details.
+          </p>
+          <div className="p-4 rounded-lg bg-dk-3/50 border border-dk-3">
+            <p className="text-sm text-dk-5/90 mb-2">
+              <strong>On the set details page, you'll see:</strong>
+            </p>
+            <ul className="text-sm text-dk-5/80 space-y-1 list-disc list-inside">
+              <li>Set information and image</li>
+              <li>List of parts in the set</li>
+              <li>A form to create a project</li>
+            </ul>
+          </div>
+        </div>
+      ),
+      showOnPages: ['/']
+    },
+    {
+      title: 'Step 3: Create Your Project',
+      content: (
+        <div className="space-y-4">
+          <p className="text-dk-5/90">
+            Perfect! Now scroll down and enter a name for your project, then click "Create project".
+          </p>
+          <div className="p-4 rounded-lg bg-mint/10 border border-mint/30">
+            <div className="flex items-start gap-2">
+              <span className="text-lg text-mint">📝</span>
+              <div>
+                <p className="text-sm font-medium text-dk-5 mb-1">Project naming</p>
+                <p className="text-sm text-dk-5/80">
+                  Give your project a descriptive name so you can easily identify it later.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-sm text-dk-5/80">
+              👇 Look for the "Create project" section below
+            </p>
+          </div>
+        </div>
+      ),
+      showOnPages: ['/set/']
+    },
+    {
       title: `You're All Set! 🎉`,
       content: (
         <div className="space-y-4">
           <p className="text-dk-5/90">
-            You're ready to start generating 3D-printable LEGO parts!
+            Congratulations! You've created your first project and completed the onboarding.
           </p>
           <div className="p-4 rounded-lg bg-dk-3/50 border border-dk-3">
             <p className="text-sm text-dk-5/90 mb-3">
-              <strong>Quick recap:</strong>
+              <strong>What you've learned:</strong>
             </p>
             <ul className="text-sm text-dk-5/80 space-y-2 list-disc list-inside">
-              <li>LDraw library is ready for part conversion</li>
-              <li>Settings are configured (customizable anytime)</li>
-              <li>Projects help you organize your builds</li>
-              <li>Each project can have multiple generation jobs</li>
+              <li>Downloaded the LDraw library for part conversion</li>
+              <li>Explored LDView settings for quality control</li>
+              <li>Created your first project from a LEGO set</li>
             </ul>
+          </div>
+          <div className="p-4 rounded-lg bg-mint/10 border border-mint/30">
+            <div className="flex items-start gap-2">
+              <span className="text-lg text-mint">🚀</span>
+              <div>
+                <p className="text-sm font-medium text-dk-5 mb-1">Next steps</p>
+                <p className="text-sm text-dk-5/80">
+                  Open your project from the Projects page to configure settings and generate STL files!
+                </p>
+              </div>
+            </div>
           </div>
           <button
             onClick={handleComplete}
             className="w-full px-6 py-3 bg-mint text-dk-1 rounded-lg font-medium hover:opacity-90 transition"
           >
-            Start Using BrickGen
+            Finish Onboarding
           </button>
           <p className="text-xs text-dk-5/60 text-center">
             Need help? Check out the Guide page
@@ -263,6 +378,30 @@ function OnboardingWizard({ onComplete }) {
   ]
 
   const currentStepData = steps[currentStep]
+  
+  // Check if wizard should be shown on current page
+  const shouldShowOnCurrentPage = () => {
+    if (!currentStepData.showOnPages) return true
+    return currentStepData.showOnPages.some(page => location.pathname.startsWith(page))
+  }
+  
+  // Auto-advance steps based on location
+  useEffect(() => {
+    if (currentStep === 4 && location.pathname === '/') {
+      // Already on search page, stay on step 4
+    } else if (currentStep === 4 && location.pathname.startsWith('/set/')) {
+      // User navigated to set detail, advance to step 5
+      setCurrentStep(5)
+    } else if (currentStep === 5 && location.pathname === '/') {
+      // User went back to search, go back to step 4
+      setCurrentStep(4)
+    }
+  }, [location.pathname, currentStep])
+
+  // Don't render if we're on a page that shouldn't show the wizard for this step
+  if (!shouldShowOnCurrentPage()) {
+    return null
+  }
 
   return (
     <>

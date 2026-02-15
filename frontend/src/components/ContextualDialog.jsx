@@ -14,36 +14,86 @@ function ContextualDialog({
 }) {
   const dialogRef = useRef(null)
 
-  useEffect(() => {
+  const updatePosition = () => {
     if (targetSelector && dialogRef.current) {
       const targetElement = document.querySelector(targetSelector)
       if (targetElement) {
         const targetRect = targetElement.getBoundingClientRect()
         const dialogElement = dialogRef.current
+        const dialogRect = dialogElement.getBoundingClientRect()
         
-        // Position dialog based on target element and position preference
+        let top, left, right, bottom
+        
+        // Calculate position with viewport boundary checks
         switch (position) {
           case 'bottom':
-            dialogElement.style.top = `${targetRect.bottom + 12}px`
-            dialogElement.style.left = `${targetRect.left}px`
+            top = targetRect.bottom + 12
+            left = Math.max(12, Math.min(targetRect.left, window.innerWidth - dialogRect.width - 12))
+            // If would overflow bottom, position above instead
+            if (top + dialogRect.height > window.innerHeight - 12) {
+              bottom = window.innerHeight - targetRect.top + 12
+              dialogElement.style.bottom = `${bottom}px`
+              dialogElement.style.top = 'auto'
+            } else {
+              dialogElement.style.top = `${top}px`
+              dialogElement.style.bottom = 'auto'
+            }
+            dialogElement.style.left = `${left}px`
+            dialogElement.style.right = 'auto'
             break
+            
           case 'right':
-            dialogElement.style.top = `${targetRect.top}px`
-            dialogElement.style.left = `${targetRect.right + 12}px`
+            top = Math.max(12, Math.min(targetRect.top, window.innerHeight - dialogRect.height - 12))
+            left = targetRect.right + 12
+            // If would overflow right, position left instead
+            if (left + dialogRect.width > window.innerWidth - 12) {
+              right = window.innerWidth - targetRect.left + 12
+              dialogElement.style.right = `${right}px`
+              dialogElement.style.left = 'auto'
+            } else {
+              dialogElement.style.left = `${left}px`
+              dialogElement.style.right = 'auto'
+            }
+            dialogElement.style.top = `${top}px`
+            dialogElement.style.bottom = 'auto'
             break
+            
           case 'left':
-            dialogElement.style.top = `${targetRect.top}px`
-            dialogElement.style.right = `${window.innerWidth - targetRect.left + 12}px`
+            top = Math.max(12, Math.min(targetRect.top, window.innerHeight - dialogRect.height - 12))
+            right = window.innerWidth - targetRect.left + 12
+            dialogElement.style.top = `${top}px`
+            dialogElement.style.right = `${right}px`
+            dialogElement.style.left = 'auto'
+            dialogElement.style.bottom = 'auto'
             break
+            
           case 'top':
-            dialogElement.style.bottom = `${window.innerHeight - targetRect.top + 12}px`
-            dialogElement.style.left = `${targetRect.left}px`
+            bottom = window.innerHeight - targetRect.top + 12
+            left = Math.max(12, Math.min(targetRect.left, window.innerWidth - dialogRect.width - 12))
+            dialogElement.style.bottom = `${bottom}px`
+            dialogElement.style.left = `${left}px`
+            dialogElement.style.top = 'auto'
+            dialogElement.style.right = 'auto'
             break
+            
           default:
-            // Keep default positioning
+            // Keep default positioning (top-right)
             break
         }
       }
+    }
+  }
+
+  useEffect(() => {
+    updatePosition()
+    
+    // Update position on window resize and scroll
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
     }
   }, [targetSelector, position])
 

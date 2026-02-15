@@ -125,7 +125,7 @@ function OnboardingWizard({ onComplete }) {
     {
       title: 'Download LDraw Library',
       position: 'bottom',
-      targetSelector: 'nav a[href="/settings"]',
+      targetSelector: '[href="/settings"]',
       highlight: 'settings',
       content: (
         <div className="space-y-3">
@@ -177,7 +177,7 @@ function OnboardingWizard({ onComplete }) {
     {
       title: 'LDView Settings (Optional)',
       position: 'bottom',
-      targetSelector: 'nav a[href="/settings"]',
+      targetSelector: '[href="/settings"]',
       highlight: 'settings',
       content: (
         <div className="space-y-3">
@@ -236,7 +236,7 @@ function OnboardingWizard({ onComplete }) {
     {
       title: 'Search for a Set',
       position: 'top',
-      targetSelector: 'input[type="text"][placeholder*="Search"]',
+      targetSelector: 'input[type="text"]', // Find first text input (search box)
       content: (
         <div className="space-y-3">
           <h3 className="text-lg font-bold text-dk-5">Step 1: Search</h3>

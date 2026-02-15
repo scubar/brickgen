@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
+import { Pagination, DataTable, LoadingState, EmptyState } from '../components/ui'
 
 function SetDetailPage() {
   const { setNum } = useParams()
@@ -131,7 +132,7 @@ function SetDetailPage() {
   }
 
   if (loading) {
-    return <div className="text-center py-8 text-dk-5">Loading...</div>
+    return <LoadingState />
   }
 
   if (error && !setDetail) {
@@ -191,9 +192,9 @@ function SetDetailPage() {
         <div className="border-t border-dk-3 pt-6 mt-6">
           <h2 className="text-2xl font-bold mb-4 text-dk-5">Projects for this set</h2>
           {loadingProjects ? (
-            <p className="text-dk-5">Loading projects...</p>
+            <LoadingState message="Loading projects..." />
           ) : projectsForSet.length === 0 ? (
-            <p className="text-dk-5">No projects for this set yet. Create one above.</p>
+            <EmptyState message="No projects for this set yet. Create one above." />
           ) : (
             <div className="grid gap-4">
               {projectsForSet.map((p) => (
@@ -247,93 +248,86 @@ function SetDetailPage() {
                     </a>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-dk-3">
-                      <thead className="bg-dk-1">
-                        <tr>
-                          {autoGeneratePartPreviews && <th className="px-2 py-3 text-left text-xs font-medium text-dk-5 uppercase tracking-wider w-24">Preview</th>}
-                          <th className="px-4 py-3 text-left text-xs font-medium text-dk-5 uppercase tracking-wider">Part #</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-dk-5 uppercase tracking-wider">Name</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-dk-5 uppercase tracking-wider">Qty</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-dk-5 uppercase tracking-wider">Color</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-dk-5 uppercase tracking-wider">Links</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-dk-3">
-                        {partsToShow.map((part, index) => (
-                          <tr key={(partsPage - 1) * PARTS_PAGE_SIZE + index} className="hover:bg-dk-3/50 text-dk-5">
-                            {autoGeneratePartPreviews && (
-                              <td className="px-2 py-2">
-                                <button type="button" onClick={() => setExpandedPreview(part)} className="block focus:outline-none focus:ring-2 focus:ring-mint rounded">
-                                  <img
-                                    src={`/api/parts/preview/${encodeURIComponent(part.ldraw_id || part.part_num)}?size=256${part.color_rgb ? `&color=${encodeURIComponent(part.color_rgb)}` : ''}`}
-                                    alt=""
-                                    className="w-20 h-20 object-contain bg-dk-1 rounded hover:opacity-90"
-                                    onError={(e) => { e.target.style.display = 'none' }}
-                                  />
-                                </button>
-                              </td>
+                  <DataTable
+                    columns={[
+                      ...(autoGeneratePartPreviews ? [{
+                        key: 'preview',
+                        label: 'Preview',
+                        className: 'w-24',
+                        render: (part) => (
+                          <button type="button" onClick={() => setExpandedPreview(part)} className="block focus:outline-none focus:ring-2 focus:ring-mint rounded">
+                            <img
+                              src={`/api/parts/preview/${encodeURIComponent(part.ldraw_id || part.part_num)}?size=256${part.color_rgb ? `&color=${encodeURIComponent(part.color_rgb)}` : ''}`}
+                              alt=""
+                              className="w-20 h-20 object-contain bg-dk-1 rounded hover:opacity-90"
+                              onError={(e) => { e.target.style.display = 'none' }}
+                            />
+                          </button>
+                        )
+                      }] : []),
+                      { key: 'part_num', label: 'Part #', className: 'whitespace-nowrap font-mono' },
+                      { key: 'name', label: 'Name' },
+                      { key: 'quantity', label: 'Qty', className: 'whitespace-nowrap' },
+                      {
+                        key: 'color',
+                        label: 'Color',
+                        className: 'whitespace-nowrap',
+                        render: (part) => (
+                          <div className="flex items-center gap-2">
+                            {part.color_rgb && (
+                              <span
+                                style={{ backgroundColor: '#' + part.color_rgb }}
+                                className="w-5 h-5 inline-block border border-dk-3 rounded"
+                                title={part.color}
+                              ></span>
                             )}
-                            <td className="px-4 py-3 whitespace-nowrap text-sm font-mono">
-                              {part.part_num}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-dk-5">
-                              {part.name}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-dk-5">
-                              {part.quantity}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm">
-                              <div className="flex items-center gap-2">
-                                {part.color_rgb && (
-                                  <span
-                                    style={{ backgroundColor: '#' + part.color_rgb }}
-                                    className="w-5 h-5 inline-block border border-dk-3 rounded"
-                                    title={part.color}
-                                  ></span>
-                                )}
-                                <span className="text-dk-5">{part.color}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm">
-                              <div className="flex gap-2">
+                            <span>{part.color}</span>
+                          </div>
+                        )
+                      },
+                      {
+                        key: 'links',
+                        label: 'Links',
+                        className: 'whitespace-nowrap',
+                        render: (part) => (
+                          <div className="flex gap-2">
+                            <a
+                              href={`https://rebrickable.com/parts/${part.part_num}/`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                              Rebrickable
+                            </a>
+                            {part.ldraw_id && (
+                              <>
+                                <span className="text-dk-5/60">|</span>
                                 <a
-                                  href={`https://rebrickable.com/parts/${part.part_num}/`}
+                                  href={`https://library.ldraw.org/parts/list?tableSearch=${part.ldraw_id}.dat`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-blue-600 hover:text-blue-800 underline"
                                 >
-                                  Rebrickable
+                                  LDraw
                                 </a>
-                                {part.ldraw_id && (
-                                  <>
-                                    <span className="text-dk-5/60">|</span>
-                                    <a
-                                      href={`https://library.ldraw.org/parts/list?tableSearch=${part.ldraw_id}.dat`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-blue-600 hover:text-blue-800 underline"
-                                    >
-                                      LDraw
-                                    </a>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                              </>
+                            )}
+                          </div>
+                        )
+                      }
+                    ]}
+                    data={partsToShow}
+                    getRowKey={(part, index) => (partsPage - 1) * PARTS_PAGE_SIZE + index}
+                    emptyMessage="No parts found."
+                  />
                   {partsList.length > PARTS_PAGE_SIZE && (
-                    <div className="flex items-center justify-between mt-4">
-                      <span className="text-sm text-dk-5">
-                        Page {partsPage} of {partsTotalPages} ({partsList.length} parts)
-                      </span>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setPartsPage(p => Math.max(1, p - 1))} disabled={partsPage <= 1} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Previous</button>
-                        <button type="button" onClick={() => setPartsPage(p => Math.min(partsTotalPages, p + 1))} disabled={partsPage >= partsTotalPages} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
-                      </div>
+                    <div className="mt-4">
+                      <Pagination
+                        page={partsPage}
+                        totalPages={partsTotalPages}
+                        onPageChange={setPartsPage}
+                        totalCount={partsList.length}
+                      />
                     </div>
                   )}
                 </>

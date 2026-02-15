@@ -597,7 +597,7 @@ apiFetch(`/api/jobs/${jobId}`)
             rowActions={(j) => (
               <>
                 {j.status === 'completed' && j.output_file && (
-                  <a href={`/api/download/${j.job_id}`} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
+                  <a href={`/api/download/${j.job_id}`} download className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
                 )}
                 {TERMINAL_JOB_STATUSES.includes(j.status) && (
                   <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>

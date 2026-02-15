@@ -59,8 +59,15 @@ SECURITY ERROR: Insecure authentication configuration detected!
   • AUTH_USERNAME is set to default value 'admin'. Please set a custom username in your .env file.
   • AUTH_PASSWORD is set to default value 'changeme'. Please set a secure password in your .env file.
 
-Application will not start until secure credentials are configured.
+Application startup aborted. Please update your .env file with secure values.
+The container will not restart until the configuration is fixed.
 ```
+
+**Handling Configuration Errors:**
+- The application will exit with error code 1 on configuration errors
+- Docker will retry starting the container a few times (as per restart policy)
+- After retries, the container will stop to prevent infinite restart loops
+- Fix the configuration in your `.env` file and restart: `docker-compose up -d`
 
 ## Usage
 

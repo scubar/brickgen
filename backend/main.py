@@ -1,6 +1,7 @@
 """Main FastAPI application."""
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,12 +60,16 @@ def validate_auth_credentials():
         for error in errors:
             error_msg += f"  • {error}\n"
         error_msg += "\n"
-        error_msg += "Application will not start until secure credentials are configured.\n"
-        error_msg += "Please update your .env file with secure values.\n"
+        error_msg += "Application startup aborted. Please update your .env file with secure values.\n"
+        error_msg += "The container will not restart until the configuration is fixed.\n"
         error_msg += "=" * 80 + "\n"
         
-        logger.error(error_msg)
-        raise RuntimeError("Application startup aborted due to insecure authentication configuration")
+        # Use logger.critical for fatal errors
+        logger.critical(error_msg)
+        
+        # Exit cleanly with error code 1
+        # This prevents infinite restart loops in Docker by providing a clear exit
+        sys.exit(1)
 
 # Validate credentials before initializing anything
 validate_auth_credentials()

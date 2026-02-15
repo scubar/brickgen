@@ -57,6 +57,8 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
    ```
    
    **⚠️ IMPORTANT**: The application will **not start** if you leave the default authentication credentials (`admin`/`changeme`) or the default JWT secret key. You must set secure values before running.
+   
+   If you see configuration errors in the logs, the container will stop after a few retry attempts. Fix the configuration in your `.env` file and restart with `docker-compose up -d`.
 
 3. **Build and run with Docker Compose**
    ```bash

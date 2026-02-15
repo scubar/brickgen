@@ -11,7 +11,7 @@ import DocumentationPage from './pages/DocumentationPage'
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-dk-1 flex flex-col">
+      <div className="min-h-screen bg-dk-1 flex flex-col pb-16">
         <Header />
         <main className="container mx-auto px-4 py-8 flex-1">
           <ApiErrorProvider>
@@ -28,7 +28,7 @@ function App() {
           </Routes>
           </ApiErrorProvider>
         </main>
-        <footer className="border-t border-dk-3 bg-dk-2 mt-auto py-3 px-4 text-center text-sm text-dk-5">
+        <footer className="border-t border-dk-3 bg-dk-2 py-3 px-4 text-center text-sm text-dk-5 fixed bottom-0 left-0 right-0 z-10">
           This project is not compatible with LEGO&trade;. LEGO&trade; is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.
         </footer>
       </div>

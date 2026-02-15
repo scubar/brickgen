@@ -55,12 +55,12 @@ def validate_auth_credentials():
     
     if warnings:
         warning_msg = "\n" + "=" * 80 + "\n"
-        warning_msg += "⚠️  SECURITY WARNING: Default authentication credentials detected\n"
+        warning_msg += "SECURITY WARNING: Default authentication credentials detected\n"
         warning_msg += "=" * 80 + "\n"
         for warning in warnings:
             warning_msg += f"  • {warning}\n"
         warning_msg += "\n"
-        warning_msg += "The application will start, but consider updating these values for production use.\n"
+        warning_msg += "The application will start, but consider updating these values for more secure use.\n"
         warning_msg += "=" * 80 + "\n"
         
         logger.warning(warning_msg)

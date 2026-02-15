@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../api'
 import CacheSection from './CacheSection'
+import { Pagination } from './ui'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 const PREVIEW_ITEMS_PER_PAGE = 5
@@ -140,16 +141,22 @@ export default function CacheManagementContent() {
                   ))}
                 </ul>
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-dk-5/80">Items per page:</span>
-                    <select value={rebrickablePageSize} onChange={(e) => handleRebrickablePageSizeChange(Number(e.target.value))} className="border border-dk-3 rounded px-2 py-1 text-dk-5 bg-dk-1">{PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}</select>
-                  </div>
                   {(rebrickablePrev !== null || rebrickableNext !== null) && (
-                    <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => goToRebrickablePage(rebrickablePrev)} disabled={rebrickablePrev === null} className="px-2 py-1 border border-dk-3 rounded text-sm text-dk-5 disabled:opacity-50">Previous</button>
-                      <span className="text-sm text-dk-5/80">Page {rebrickablePage} of {Math.max(1, Math.ceil(rebrickableCount / rebrickablePageSize))} ({rebrickableCount} total)</span>
-                      <button type="button" onClick={() => goToRebrickablePage(rebrickableNext)} disabled={rebrickableNext === null} className="px-2 py-1 border border-dk-3 rounded text-sm text-dk-5 disabled:opacity-50">Next</button>
-                    </div>
+                    <Pagination
+                      page={rebrickablePage}
+                      totalPages={Math.max(1, Math.ceil(rebrickableCount / rebrickablePageSize))}
+                      onPageChange={(newPage) => {
+                        if (newPage > rebrickablePage && rebrickableNext !== null) {
+                          goToRebrickablePage(rebrickableNext)
+                        } else if (newPage < rebrickablePage && rebrickablePrev !== null) {
+                          goToRebrickablePage(rebrickablePrev)
+                        }
+                      }}
+                      totalCount={rebrickableCount}
+                      pageSize={rebrickablePageSize}
+                      pageSizeOptions={PAGE_SIZE_OPTIONS}
+                      onPageSizeChange={handleRebrickablePageSizeChange}
+                    />
                   )}
                 </div>
               </>
@@ -171,10 +178,13 @@ export default function CacheManagementContent() {
                     })}
                   </div>
                   {totalPages > 1 && (
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-dk-3">
-                      <button type="button" onClick={() => setPreviewPage((p) => Math.max(1, p - 1))} disabled={previewPage <= 1} className="px-2 py-1 border border-dk-3 rounded text-sm text-dk-5 disabled:opacity-50">Previous</button>
-                      <span className="text-sm text-dk-5/80">Page {previewPage} of {totalPages} ({previewList.length} total)</span>
-                      <button type="button" onClick={() => setPreviewPage((p) => Math.min(totalPages, p + 1))} disabled={previewPage >= totalPages} className="px-2 py-1 border border-dk-3 rounded text-sm text-dk-5 disabled:opacity-50">Next</button>
+                    <div className="pt-2 border-t border-dk-3">
+                      <Pagination
+                        page={previewPage}
+                        totalPages={totalPages}
+                        onPageChange={setPreviewPage}
+                        totalCount={previewList.length}
+                      />
                     </div>
                   )}
                 </>
@@ -218,10 +228,13 @@ export default function CacheManagementContent() {
                     {pageQueries.map((q) => <li key={q} className="py-2 text-sm font-mono text-dk-5">{q}</li>)}
                   </ul>
                   {totalPages > 1 && (
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-dk-3">
-                      <button type="button" onClick={() => setSearchHistoryPage((p) => Math.max(1, p - 1))} disabled={searchHistoryPage <= 1} className="px-2 py-1 border border-dk-3 rounded text-sm text-dk-5 disabled:opacity-50">Previous</button>
-                      <span className="text-sm text-dk-5/80">Page {searchHistoryPage} of {totalPages} ({searchHistory.length} total)</span>
-                      <button type="button" onClick={() => setSearchHistoryPage((p) => Math.min(totalPages, p + 1))} disabled={searchHistoryPage >= totalPages} className="px-2 py-1 border border-dk-3 rounded text-sm text-dk-5 disabled:opacity-50">Next</button>
+                    <div className="pt-2 border-t border-dk-3">
+                      <Pagination
+                        page={searchHistoryPage}
+                        totalPages={totalPages}
+                        onPageChange={setSearchHistoryPage}
+                        totalCount={searchHistory.length}
+                      />
                     </div>
                   )}
                   <p className="text-sm text-dk-5/80">{searchHistory.length} query(ies)</p>

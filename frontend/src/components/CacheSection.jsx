@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Modal from './ui/Modal'
 
 /**
  * Generic cache section: card with optional thumbnail, description, and "Manage cache" button
@@ -20,19 +21,14 @@ export default function CacheSection({ id, title, description, thumbnailUrl, thu
           </button>
         </div>
       </div>
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setModalOpen(false)}>
-          <div className="bg-dk-2 border border-dk-3 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-dk-3 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-dk-5">{title}</h3>
-              <button type="button" onClick={() => setModalOpen(false)} className="text-dk-5 hover:text-mint text-2xl leading-none" aria-label="Close">×</button>
-            </div>
-            <div className="p-4 overflow-auto flex-1 text-dk-5">
-              {children}
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal 
+        open={modalOpen} 
+        onClose={() => setModalOpen(false)} 
+        title={title}
+        maxWidth="max-w-2xl"
+      >
+        {children}
+      </Modal>
     </div>
   )
 }

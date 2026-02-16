@@ -19,6 +19,7 @@ from backend.config import settings
 from backend.core.stl_processing import STLConverter
 from backend.api.integrations.ldraw import LDrawManager
 from backend.database import get_db, ApiCache, engine
+from backend.auth import get_current_user
 from backend.database import Project, Job, SearchHistory
 from backend.database import STLCache, AppSettings
 from backend.core.api_cache import DbApiCache
@@ -143,7 +144,8 @@ def _sync_config_from_row(row: AppSettings) -> None:
 
 
 @router.get("/settings", response_model=SettingsResponse)
-async def get_settings(db: Session = Depends(get_db)):
+async def get_settings(db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """Get current application settings from the database (falls back to config defaults if no row).
     When a row exists, in-memory config is synced so the rest of the app uses persisted values."""
     row = db.query(AppSettings).filter(AppSettings.id == 1).first()
@@ -221,7 +223,8 @@ def _validate_ldview_ranges(update: SettingsUpdate) -> None:
 
 
 @router.post("/settings")
-async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db)):
+async def update_settings(update: SettingsUpdate, db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """Update application settings. Persists to database and syncs in-memory config.
 
     If rotation, default_orientation_match_preview, or any LDView quality setting is changed, STL cache is cleared.
@@ -469,7 +472,8 @@ async def get_cache_stats():
 
 
 @router.delete("/cache/clear")
-async def clear_cache(db: Session = Depends(get_db)):
+async def clear_cache(db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """Clear all cached STL files and STL cache DB rows."""
     try:
         converter = STLConverter()
@@ -605,7 +609,8 @@ def _get_applied_revision_ids(script_dir, current_id: Optional[str]) -> set:
 
 
 @router.get("/settings/database", response_model=DatabaseInfo)
-async def get_database_info(db: Session = Depends(get_db)):
+async def get_database_info(db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """Return database path, applied migrations, and row counts per table."""
     from alembic.script import ScriptDirectory
 

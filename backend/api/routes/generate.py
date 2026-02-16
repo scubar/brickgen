@@ -27,6 +27,7 @@ from backend.database import get_db, Job, Project
 from backend.api.routes.settings import sync_config_from_db
 from backend.config import settings
 from backend.version import __version__
+from backend.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -397,7 +398,8 @@ async def process_generation(
 @router.post("/generate", response_model=JobStatus)
 async def generate_3mf(
     request: GenerateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Generate 3MF file for a LEGO set."""
     job_id = str(uuid.uuid4())
@@ -466,7 +468,7 @@ async def generate_3mf(
 
 
 @router.get("/jobs/{job_id}/progress", response_model=JobProgress)
-async def get_job_progress(job_id: str):
+async def get_job_progress(job_id: str, current_user: str = Depends(get_current_user)):
     """Get in-memory progress for a running job only. No database access. Returns 404 if job is not in progress."""
     overlay = get_job_progress_overlay(job_id)
     if not overlay:
@@ -507,7 +509,11 @@ async def websocket_job_progress(websocket: WebSocket, job_id: str):
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatus)
-async def get_job_status(job_id: str, db: Session = Depends(get_db)):
+async def get_job_status(
+    job_id: str, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Get full job record from the database. For live progress of a running job, use GET /jobs/{id}/progress instead."""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -527,7 +533,10 @@ async def get_job_status(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/jobs/files")
-async def clear_all_job_files(db: Session = Depends(get_db)):
+async def clear_all_job_files(
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Remove all job output files from disk (e.g. from settings). Job records are kept."""
     jobs = db.query(Job).filter(Job.output_file.isnot(None)).all()
     deleted = 0
@@ -542,7 +551,11 @@ async def clear_all_job_files(db: Session = Depends(get_db)):
 
 
 @router.delete("/jobs/{job_id}/files")
-async def delete_job_files(job_id: str, db: Session = Depends(get_db)):
+async def delete_job_files(
+    job_id: str, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Remove the output file for a job from disk. Job record is kept."""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -565,7 +578,11 @@ async def delete_job_files(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/jobs/{job_id}/cancel")
-async def cancel_job(job_id: str, db: Session = Depends(get_db)):
+async def cancel_job(
+    job_id: str, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Cancel a running job. Frees the slot and marks the job as cancelled; the worker will exit when it next checks."""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -587,7 +604,11 @@ async def cancel_job(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/jobs/{job_id}")
-async def delete_job(job_id: str, db: Session = Depends(get_db)):
+async def delete_job(
+    job_id: str, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Delete a job record and its output file (if any)."""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -612,7 +633,8 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
 @router.post("/jobs/{job_id}/rerun", response_model=JobStatus)
 async def rerun_job(
     job_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Re-run a job with the same stored settings. Creates a new job."""
     job = db.query(Job).filter(Job.id == job_id).first()

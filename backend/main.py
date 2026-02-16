@@ -1,6 +1,7 @@
 """Main FastAPI application."""
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.config import settings
 from backend.database import init_db
-from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts
+from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts, auth
 from backend.core.job_progress import broadcast_progress_task
+from backend.auth import get_current_user
 from backend.version import __version__
 
 # Configure logging (level from settings.log_level / LOG_LEVEL env)
@@ -19,6 +21,52 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Validate authentication credentials are configured
+def validate_auth_credentials():
+    """Display warning if default authentication credentials are being used."""
+    insecure_usernames = ["brickgen"]
+    insecure_passwords = ["brickgen"]
+    insecure_jwt_secrets = [
+        "dev_secret_key_change_in_production",
+        "your_secret_key_here_change_in_production"
+    ]
+    
+    warnings = []
+    
+    if settings.auth_username in insecure_usernames:
+        warnings.append(
+            f"AUTH_USERNAME is set to default value '{settings.auth_username}'. "
+            "Consider changing it in your .env file for better security."
+        )
+    
+    if settings.auth_password in insecure_passwords:
+        warnings.append(
+            f"AUTH_PASSWORD is set to default value '{settings.auth_password}'. "
+            "Consider changing it in your .env file for better security."
+        )
+    
+    if settings.jwt_secret_key in insecure_jwt_secrets:
+        warnings.append(
+            "JWT_SECRET_KEY is set to a default value. "
+            "Consider generating a secure secret key (e.g., using 'openssl rand -hex 32') "
+            "and setting it in your .env file for better security."
+        )
+    
+    if warnings:
+        warning_msg = "\n" + "=" * 80 + "\n"
+        warning_msg += "SECURITY WARNING: Default authentication credentials detected\n"
+        warning_msg += "=" * 80 + "\n"
+        for warning in warnings:
+            warning_msg += f"  • {warning}\n"
+        warning_msg += "\n"
+        warning_msg += "The application will start, but consider updating these values for more secure use.\n"
+        warning_msg += "=" * 80 + "\n"
+        
+        logger.warning(warning_msg)
+
+# Check credentials and display warning if defaults are used
+validate_auth_credentials()
 
 # Task reference for the WebSocket broadcast task
 _broadcast_task = None
@@ -43,6 +91,10 @@ app.add_middleware(
 )
 
 # API routes
+# Auth routes (no authentication required for login)
+app.include_router(auth.router, prefix=settings.api_prefix, tags=["auth"])
+
+# Protected API routes (authentication applied at route level to exclude WebSocket routes)
 app.include_router(search.router, prefix=settings.api_prefix, tags=["search"])
 app.include_router(generate.router, prefix=settings.api_prefix, tags=["generate"])
 app.include_router(download.router, prefix=settings.api_prefix, tags=["download"])

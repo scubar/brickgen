@@ -4,6 +4,7 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 
 ## Features
 
+- **Authentication**: JWT-based authentication system for secure access
 - **Set Search**: Search sets by name or number using the Rebrickable API
 - **Automatic Part Conversion**: Converts LDraw .dat files to STL using official LDView tool
 - **ZIP Download**: All individual STL files packaged for easy import to any slicer
@@ -49,8 +50,13 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 2. **Configure environment**
    ```bash
    cp .env.example .env
-   # Edit .env and add your Rebrickable API key
+   # Edit .env and set your values:
+   # - Your Rebrickable API key (required)
+   # - Authentication credentials (default: brickgen/brickgen)
+   # - A secure JWT secret key (recommended for production)
    ```
+   
+   **Note**: Default credentials are `brickgen`/`brickgen`. You'll see a warning on startup if you use defaults. Consider changing them for production deployments.
 
 3. **Build and run with Docker Compose**
    ```bash
@@ -60,6 +66,10 @@ BrickGen is a self-hosted web application that generates print-ready STL files f
 4. **Access the application**
    
    Open your browser to http://localhost:8000
+   
+   You'll be prompted to log in with the credentials you set in `.env`
+   
+   See [AUTHENTICATION.md](AUTHENTICATION.md) for detailed authentication documentation.
 
 ### First Run
 

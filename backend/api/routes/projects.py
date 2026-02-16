@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 from backend.database import get_db, Project, Job
+from backend.auth import get_current_user
 from backend.config import settings
 from backend.version import __version__
 from backend.core.job_progress import get_job_progress_overlay, last_log_line, claim_job_slot, release_job_slot
@@ -63,7 +64,8 @@ class JobResponse(BaseModel):
 
 
 @router.get("/projects", response_model=List[ProjectResponse])
-async def list_projects(db: Session = Depends(get_db)):
+async def list_projects(db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """List all projects."""
     rows = db.query(Project).order_by(Project.updated_at.desc()).all()
     return [
@@ -80,7 +82,8 @@ async def list_projects(db: Session = Depends(get_db)):
 
 
 @router.post("/projects", response_model=ProjectResponse)
-async def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
+async def create_project(data: ProjectCreate, db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """Create a project for a set. Optionally warn if another project references the same set."""
     # Resolve set display info from cache
     from backend.core.api_cache import DbApiCache
@@ -124,7 +127,8 @@ async def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: str, db: Session = Depends(get_db)):
+async def get_project(project_id: str, db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """Get a project by ID."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -140,7 +144,8 @@ async def get_project(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/projects/{project_id}")
-async def delete_project(project_id: str, db: Session = Depends(get_db)):
+async def delete_project(project_id: str, db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """Delete a project and all its jobs and job output files."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -163,7 +168,8 @@ async def delete_project(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/projects/{project_id}/jobs", response_model=List[JobResponse])
-async def list_project_jobs(project_id: str, db: Session = Depends(get_db)):
+async def list_project_jobs(project_id: str, db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)):
     """List jobs for a project."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:

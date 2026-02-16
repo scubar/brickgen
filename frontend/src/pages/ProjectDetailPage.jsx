@@ -399,6 +399,61 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
+  const downloadJobFile = async (jobId) => {
+    try {
+      const r = await apiFetch(`/api/download/${jobId}`)
+      if (!r.ok) return
+      
+      // Get the filename from Content-Disposition header or use a default
+      const contentDisposition = r.headers.get('Content-Disposition')
+      let filename = 'download.zip'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/i)
+        if (filenameMatch) filename = filenameMatch[1]
+      }
+      
+      const blob = await r.blob()
+      
+      // Use File System Access API if available (prompts user for save location)
+      if (window.showSaveFilePicker) {
+        try {
+          const fileExtension = filename.split('.').pop()
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: fileExtension === 'zip' ? 'ZIP Archive' : '3MF File',
+              accept: fileExtension === 'zip' 
+                ? { 'application/zip': ['.zip'] }
+                : { 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml': ['.3mf'] }
+            }]
+          })
+          const writable = await handle.createWritable()
+          await writable.write(blob)
+          await writable.close()
+          return
+        } catch (err) {
+          // User cancelled the save dialog or browser blocked it
+          if (err.name !== 'AbortError') {
+            console.error('Save picker failed:', err)
+          }
+          return
+        }
+      }
+      
+      // Fallback: programmatic download (browser may or may not prompt based on settings)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (e) {
+      console.error('Download failed:', e)
+    }
+  }
+
   const deleteJobFiles = async (jobId) => {
     if (!confirm('Remove this job\'s output file from disk?')) return
     try {
@@ -597,7 +652,7 @@ apiFetch(`/api/jobs/${jobId}`)
             rowActions={(j) => (
               <>
                 {j.status === 'completed' && j.output_file && (
-                  <a href={`/api/download/${j.job_id}`} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
+                  <button onClick={() => downloadJobFile(j.job_id)} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</button>
                 )}
                 {TERMINAL_JOB_STATUSES.includes(j.status) && (
                   <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>

@@ -24,7 +24,7 @@ function OnboardingWizard({ onComplete }) {
 
   // Check if user has created a project (poll /api/projects)
   useEffect(() => {
-    if (currentStep >= 4 && !projectCreated) {
+    if (currentStep >= 4 && currentStep < 7 && !projectCreated) {
       const checkProjects = async () => {
         try {
           const r = await apiFetch('/api/projects')
@@ -32,8 +32,8 @@ function OnboardingWizard({ onComplete }) {
             const projects = await r.json()
             if (projects && projects.length > 0) {
               setProjectCreated(true)
-              // Auto-advance to completion step after project creation
-              setCurrentStep(6)
+              // Auto-advance to project guidance step after project creation
+              setCurrentStep(7)
             }
           }
         } catch (e) {
@@ -235,20 +235,21 @@ function OnboardingWizard({ onComplete }) {
     },
     {
       title: 'Search for a Set',
-      position: 'top',
-      targetSelector: 'input[type="text"]', // Find first text input (search box)
+      position: 'top-right', // Changed from 'top' to keep as side wizard
+      // Remove targetSelector to keep as side wizard instead of pointing to search box
       content: (
         <div className="space-y-3">
           <h3 className="text-lg font-bold text-dk-5">Step 1: Search</h3>
           <p className="text-sm text-dk-5/90">
-            Use the search box to find a LEGO set by name or number (e.g., "21348-1").
+            Use the search box below to find a LEGO set by name or number (e.g., "21348-1").
           </p>
           <p className="text-xs text-dk-5/70">
             💡 Find set numbers on <a href="https://rebrickable.com" target="_blank" rel="noopener noreferrer" className="text-mint hover:underline">Rebrickable</a>
           </p>
         </div>
       ),
-      showOnPages: ['/']
+      showOnPages: ['/'],
+      highlightTarget: 'input[type="text"]' // Add highlight instead of positioning to it
     },
     {
       title: 'View Set Details',
@@ -280,18 +281,77 @@ function OnboardingWizard({ onComplete }) {
       showOnPages: ['/set/']
     },
     {
+      title: 'Open Your Project',
+      position: 'top-right',
+      content: (
+        <div className="space-y-3">
+          <h3 className="text-lg font-bold text-dk-5">Step 4: Open Project</h3>
+          <p className="text-sm text-dk-5/90">
+            Great! Your project was created. Now click on "Projects" in the menu to view it.
+          </p>
+          <button
+            onClick={() => {
+              navigate('/projects')
+              setCurrentStep(8)
+            }}
+            className="w-full px-4 py-2 bg-mint text-dk-1 rounded-lg font-medium hover:opacity-90 transition text-sm"
+          >
+            Go to Projects
+          </button>
+        </div>
+      ),
+      showOnPages: ['/set/', '/']
+    },
+    {
+      title: 'Open Your Project',
+      position: 'top-right',
+      content: (
+        <div className="space-y-3">
+          <h3 className="text-lg font-bold text-dk-5">Step 5: Select Project</h3>
+          <p className="text-sm text-dk-5/90">
+            Click on your newly created project to open it.
+          </p>
+        </div>
+      ),
+      showOnPages: ['/projects']
+    },
+    {
+      title: 'Generate STL Files',
+      position: 'top-right',
+      content: (
+        <div className="space-y-3">
+          <h3 className="text-lg font-bold text-dk-5">Step 6: Generate STLs</h3>
+          <p className="text-sm text-dk-5/90">
+            Click "Create Job" or "Quick Generate" to start generating 3D-printable STL files for your LEGO parts.
+          </p>
+          <div className="text-xs text-dk-5/70 space-y-1">
+            <p>• <strong>Quick Generate</strong>: Uses default settings</p>
+            <p>• <strong>Create Job</strong>: Customize settings first</p>
+          </div>
+          <button
+            onClick={() => setCurrentStep(10)}
+            className="w-full px-4 py-2 bg-mint text-dk-1 rounded-lg font-medium hover:opacity-90 transition text-sm"
+          >
+            Continue
+          </button>
+        </div>
+      ),
+      showOnPages: ['/projects/']
+    },
+    {
       title: 'Onboarding Complete!',
       position: 'top-right',
       content: (
         <div className="space-y-3">
           <h3 className="text-lg font-bold text-dk-5">You're All Set! 🎉</h3>
           <p className="text-sm text-dk-5/90">
-            Congratulations! You've completed onboarding and created your first project.
+            You've completed the onboarding and learned the basics!
           </p>
           <div className="text-xs text-dk-5/80 space-y-1">
             <p>✓ Downloaded LDraw library</p>
             <p>✓ Configured settings</p>
             <p>✓ Created first project</p>
+            <p>✓ Learned how to generate STLs</p>
           </div>
           <button
             onClick={handleComplete}
@@ -322,6 +382,12 @@ function OnboardingWizard({ onComplete }) {
     } else if (currentStep === 5 && location.pathname === '/') {
       // User went back to search, go back to step 4
       setCurrentStep(4)
+    } else if (currentStep === 7 && location.pathname.startsWith('/projects/') && location.pathname !== '/projects') {
+      // User opened a specific project, advance to step 9 (generate STLs)
+      setCurrentStep(9)
+    } else if (currentStep === 8 && location.pathname.startsWith('/projects/') && location.pathname !== '/projects') {
+      // User opened a specific project from projects page, advance to step 9
+      setCurrentStep(9)
     }
   }, [location.pathname, currentStep])
 
@@ -344,6 +410,20 @@ function OnboardingWizard({ onComplete }) {
           @keyframes pulse-glow {
             0%, 100% { box-shadow: 0 0 0 4px rgba(0, 217, 255, 0.5), 0 0 30px rgba(0, 217, 255, 0.3); }
             50% { box-shadow: 0 0 0 6px rgba(0, 217, 255, 0.7), 0 0 40px rgba(0, 217, 255, 0.5); }
+          }
+        ` }} />
+      )}
+      
+      {/* Highlight effect for other target elements */}
+      {currentStepData.highlightTarget && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          ${currentStepData.highlightTarget} {
+            box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.4), 0 0 20px rgba(0, 217, 255, 0.2);
+            animation: pulse-highlight 2s infinite;
+          }
+          @keyframes pulse-highlight {
+            0%, 100% { box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.4), 0 0 20px rgba(0, 217, 255, 0.2); }
+            50% { box-shadow: 0 0 0 5px rgba(0, 217, 255, 0.6), 0 0 30px rgba(0, 217, 255, 0.4); }
           }
         ` }} />
       )}

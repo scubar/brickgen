@@ -4,6 +4,18 @@ from typing import Optional, List
 from pydantic import BaseModel, Field, model_validator, field_validator
 
 
+class LoginRequest(BaseModel):
+    """Login request with username and password."""
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """JWT token response."""
+    access_token: str
+    token_type: str = "bearer"
+
+
 class SetSearchResult(BaseModel):
     """LEGO set search result."""
     set_num: str

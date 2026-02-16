@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
+import { Pagination, DataTable, LoadingState, EmptyState, ProgressBar, Badge, Button } from '../components/ui'
 
 const WIZARD_STEPS = ['Output', 'Build Plate', 'Options', 'Per Part Rotation', 'Confirm']
 
@@ -398,6 +399,61 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
+  const downloadJobFile = async (jobId) => {
+    try {
+      const r = await apiFetch(`/api/download/${jobId}`)
+      if (!r.ok) return
+      
+      // Get the filename from Content-Disposition header or use a default
+      const contentDisposition = r.headers.get('Content-Disposition')
+      let filename = 'download.zip'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/i)
+        if (filenameMatch) filename = filenameMatch[1]
+      }
+      
+      const blob = await r.blob()
+      
+      // Use File System Access API if available (prompts user for save location)
+      if (window.showSaveFilePicker) {
+        try {
+          const fileExtension = filename.split('.').pop()
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: fileExtension === 'zip' ? 'ZIP Archive' : '3MF File',
+              accept: fileExtension === 'zip' 
+                ? { 'application/zip': ['.zip'] }
+                : { 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml': ['.3mf'] }
+            }]
+          })
+          const writable = await handle.createWritable()
+          await writable.write(blob)
+          await writable.close()
+          return
+        } catch (err) {
+          // User cancelled the save dialog or browser blocked it
+          if (err.name !== 'AbortError') {
+            console.error('Save picker failed:', err)
+          }
+          return
+        }
+      }
+      
+      // Fallback: programmatic download (browser may or may not prompt based on settings)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (e) {
+      console.error('Download failed:', e)
+    }
+  }
+
   const deleteJobFiles = async (jobId) => {
     if (!confirm('Remove this job\'s output file from disk?')) return
     try {
@@ -455,7 +511,7 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
-  if (loading || !project) return <div className="text-center py-8 text-dk-5">Loading...</div>
+  if (loading || !project) return <LoadingState />
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -474,41 +530,39 @@ apiFetch(`/api/jobs/${jobId}`)
       {partsList.length > 0 && (
         <details className="bg-dk-2 rounded-lg border border-dk-3 p-4 mb-6">
           <summary className="cursor-pointer font-semibold text-dk-5 hover:text-mint">Part list ({partsList.length} parts)</summary>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-dk-5 border-b border-dk-3">
-                  <th className="pb-2 pr-2 w-20">Preview</th>
-                  <th className="pb-2 pr-4">Part</th>
-                  <th className="pb-2 pr-4">Name</th>
-                  <th className="pb-2 pr-4">Qty</th>
-                  <th className="pb-2">Color</th>
-                </tr>
-              </thead>
-              <tbody className="text-dk-5">
-                {partsToShow.map((p, i) => (
-                  <tr key={(partsPage - 1) * PARTS_PAGE_SIZE + i} className="border-b border-dk-3/50">
-                    <td className="py-1.5 pr-2">
-                      <img
-                        src={`/api/parts/preview/${encodeURIComponent(p.ldraw_id || p.part_num)}?size=128${p.color_rgb ? `&color=${encodeURIComponent(p.color_rgb)}` : ''}`}
-                        alt=""
-                        className="w-12 h-12 object-contain bg-dk-1 rounded"
-                        onError={(e) => { e.target.style.display = 'none' }}
-                      />
-                    </td>
-                    <td className="py-1.5 font-mono">{p.ldraw_id || p.part_num}</td>
-                    <td className="py-1.5 truncate max-w-[200px]">{p.name}</td>
-                    <td className="py-1.5">{p.quantity}</td>
-                    <td className="py-1.5">{p.color}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <DataTable
+              columns={[
+                {
+                  key: 'preview',
+                  label: 'Preview',
+                  className: 'w-20',
+                  render: (p) => (
+                    <img
+                      src={`/api/parts/preview/${encodeURIComponent(p.ldraw_id || p.part_num)}?size=128${p.color_rgb ? `&color=${encodeURIComponent(p.color_rgb)}` : ''}`}
+                      alt=""
+                      className="w-12 h-12 object-contain bg-dk-1 rounded"
+                      onError={(e) => { e.target.style.display = 'none' }}
+                    />
+                  )
+                },
+                { key: 'part_identifier', label: 'Part', className: 'font-mono', render: (p) => p.ldraw_id || p.part_num },
+                { key: 'name', label: 'Name', className: 'truncate max-w-[200px]' },
+                { key: 'quantity', label: 'Qty' },
+                { key: 'color', label: 'Color' }
+              ]}
+              data={partsToShow}
+              getRowKey={(p, i) => (partsPage - 1) * PARTS_PAGE_SIZE + i}
+              emptyMessage="No parts found."
+            />
             {partsTotalPages > 1 && (
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dk-3">
-                <button type="button" onClick={() => setPartsPage((p) => Math.max(1, p - 1))} disabled={partsPage <= 1} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Previous</button>
-                <span className="text-sm text-dk-5">Page {partsPage} of {partsTotalPages}</span>
-                <button type="button" onClick={() => setPartsPage((p) => Math.min(partsTotalPages, p + 1))} disabled={partsPage >= partsTotalPages} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Next</button>
+              <div className="mt-2 pt-2 border-t border-dk-3">
+                <Pagination
+                  page={partsPage}
+                  totalPages={partsTotalPages}
+                  onPageChange={setPartsPage}
+                  totalCount={partsList.length}
+                />
               </div>
             )}
           </div>
@@ -519,30 +573,25 @@ apiFetch(`/api/jobs/${jobId}`)
         <details className="bg-dk-2 rounded-lg border border-dk-3 p-4 mb-6">
           <summary className="cursor-pointer font-semibold text-dk-5 hover:text-mint">Part &amp; color reference (for Bambu Studio / OrcaSlicer)</summary>
           <p className="mt-2 mb-3 text-sm text-dk-5/90">Use this list to assign filament to parts in your slicer. Part number format is <code className="bg-dk-1 px-1 rounded">LDrawId_instance</code> (e.g. 3404_1, 3404_2).</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-dk-5 border-b border-dk-3">
-                  <th className="pb-2 pr-4">Part number</th>
-                  <th className="pb-2 pr-4">Color</th>
-                  <th className="pb-2">Hex code</th>
-                </tr>
-              </thead>
-              <tbody className="text-dk-5">
-                {colorRefToShow.map((row) => (
-                  <tr key={row.partId} className="border-b border-dk-3/50">
-                    <td className="py-1.5 font-mono">{row.partId}</td>
-                    <td className="py-1.5">{row.color}</td>
-                    <td className="py-1.5 font-mono">{row.color_rgb !== '—' ? `#${row.color_rgb}` : row.color_rgb}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            <DataTable
+              columns={[
+                { key: 'partId', label: 'Part number', className: 'font-mono' },
+                { key: 'color', label: 'Color' },
+                { key: 'color_rgb', label: 'Hex code', className: 'font-mono', render: (row) => row.color_rgb !== '—' ? `#${row.color_rgb}` : row.color_rgb }
+              ]}
+              data={colorRefToShow}
+              getRowKey={(row) => row.partId}
+              emptyMessage="No color reference data."
+            />
             {colorRefTotalPages > 1 && (
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dk-3">
-                <button type="button" onClick={() => setColorRefPage((p) => Math.max(1, p - 1))} disabled={colorRefPage <= 1} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Previous</button>
-                <span className="text-sm text-dk-5">Page {colorRefPage} of {colorRefTotalPages}</span>
-                <button type="button" onClick={() => setColorRefPage((p) => Math.min(colorRefTotalPages, p + 1))} disabled={colorRefPage >= colorRefTotalPages} className="px-2 py-1 text-dk-5 border border-dk-3 rounded text-sm disabled:opacity-50">Next</button>
+              <div className="mt-2 pt-2 border-t border-dk-3">
+                <Pagination
+                  page={colorRefPage}
+                  totalPages={colorRefTotalPages}
+                  onPageChange={setColorRefPage}
+                  totalCount={partColorRefList.length}
+                />
               </div>
             )}
           </div>
@@ -559,51 +608,74 @@ apiFetch(`/api/jobs/${jobId}`)
         <button onClick={openWizard} className="mb-4 px-6 py-2 bg-mint text-dk-1 rounded hover:opacity-90">New job</button>
 
         {jobs.length === 0 ? (
-          <p className="text-dk-5/80">No jobs yet. Click &quot;New job&quot; to create one (wizard will guide you through settings).</p>
+          <EmptyState message='No jobs yet. Click "New job" to create one (wizard will guide you through settings).' />
         ) : (
-          <ul className="divide-y divide-dk-3">
-            {jobs.map((j) => (
-              <li key={j.job_id} className="py-4 first:pt-0">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>{j.job_id.slice(0, 8)}…</code>
-                      <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium uppercase tracking-wide ${j.status === 'completed' ? 'bg-mint/20 text-mint' : j.status === 'failed' ? 'bg-danger/20 text-danger' : j.status === 'cancelled' ? 'bg-amber-500/20 text-amber-400' : 'bg-dk-3 text-dk-5'}`}>{j.status}</span>
-                      {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
-                        <span className="text-amber-400 text-xs">(different version)</span>
-                      )}
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-dk-5/80">
-                      <span>Created {new Date(j.created_at).toLocaleString()}</span>
-                      {j.brickgen_version && <span>BrickGen {j.brickgen_version}</span>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {j.status === 'completed' && j.output_file && (
-                      <a href={`/api/download/${j.job_id}`} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</a>
-                    )}
-                    {TERMINAL_JOB_STATUSES.includes(j.status) && (
-                      <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
-                    )}
-                    {j.output_file && (
-                      <button onClick={() => deleteJobFiles(j.job_id)} className="px-3 py-1 text-dk-5 border border-dk-3 rounded text-sm hover:bg-dk-3">Clear files</button>
-                    )}
-                    {!TERMINAL_JOB_STATUSES.includes(j.status) ? (
-                      <button onClick={() => cancelJob(j.job_id)} disabled={cancellingJobId === j.job_id} className="px-3 py-1 text-amber-400 hover:text-amber-300 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{cancellingJobId === j.job_id ? 'Cancelling…' : 'Cancel job'}</button>
-                    ) : (
-                      <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">{deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}</button>
+          <DataTable
+            columns={[
+              {
+                key: 'job_id',
+                label: 'Job ID',
+                render: (j) => (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <code className="text-sm font-mono text-dk-5 bg-dk-1 px-2 py-0.5 rounded border border-dk-3" title={j.job_id}>
+                      {j.job_id.slice(0, 8)}…
+                    </code>
+                    <Badge 
+                      variant={
+                        j.status === 'completed' ? 'success' : 
+                        j.status === 'failed' ? 'danger' : 
+                        j.status === 'cancelled' ? 'warning' : 
+                        'default'
+                      }
+                    >
+                      {j.status}
+                    </Badge>
+                    {j.brickgen_version && currentVersion && j.brickgen_version !== currentVersion && (
+                      <span className="text-amber-400 text-xs">(different version)</span>
                     )}
                   </div>
-                </div>
+                )
+              },
+              {
+                key: 'created_at',
+                label: 'Details',
+                render: (j) => (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-dk-5/80">
+                    <span>Created {new Date(j.created_at).toLocaleString()}</span>
+                    {j.brickgen_version && <span>BrickGen {j.brickgen_version}</span>}
+                  </div>
+                )
+              }
+            ]}
+            data={jobs}
+            getRowKey={(j) => j.job_id}
+            rowActions={(j) => (
+              <>
+                {j.status === 'completed' && j.output_file && (
+                  <button onClick={() => downloadJobFile(j.job_id)} className="px-3 py-1 bg-mint text-dk-1 rounded text-sm hover:opacity-90">Download</button>
+                )}
+                {TERMINAL_JOB_STATUSES.includes(j.status) && (
+                  <button onClick={() => rerunJob(j.job_id, j.brickgen_version)} className="px-3 py-1 border border-dk-3 rounded text-sm text-dk-5 hover:bg-dk-3">Re-run</button>
+                )}
+                {j.output_file && (
+                  <button onClick={() => deleteJobFiles(j.job_id)} className="px-3 py-1 text-dk-5 border border-dk-3 rounded text-sm hover:bg-dk-3">Clear files</button>
+                )}
+                {!TERMINAL_JOB_STATUSES.includes(j.status) ? (
+                  <button onClick={() => cancelJob(j.job_id)} disabled={cancellingJobId === j.job_id} className="px-3 py-1 text-amber-400 hover:text-amber-300 hover:bg-dk-3 rounded text-sm disabled:opacity-50">
+                    {cancellingJobId === j.job_id ? 'Cancelling…' : 'Cancel job'}
+                  </button>
+                ) : (
+                  <button onClick={() => deleteJob(j.job_id)} disabled={deletingJobId === j.job_id} className="px-3 py-1 text-danger hover:text-danger/80 hover:bg-dk-3 rounded text-sm disabled:opacity-50">
+                    {deletingJobId === j.job_id ? 'Deleting…' : 'Delete job'}
+                  </button>
+                )}
+              </>
+            )}
+            expandedContent={(j) => (
+              <>
                 {(j.status === 'processing' || j.status === 'pending') && j.progress !== undefined && (
-                  <div className="mt-2">
-                    <div className="flex justify-between text-sm text-dk-5 mb-1">
-                      <span>Progress</span>
-                      <span>{j.progress}%</span>
-                    </div>
-                    <div className="w-full bg-dk-3 rounded-full h-1.5">
-                      <div className="bg-mint h-1.5 rounded-full transition-all" style={{ width: `${j.progress}%` }} />
-                    </div>
+                  <div className="mb-2">
+                    <ProgressBar value={j.progress} label={`Progress: ${j.progress}%`} />
                     {j.log && (
                       <p className="mt-1.5 text-xs font-mono text-dk-5/90 truncate" title={j.log.trim()}>
                         {(() => {
@@ -615,17 +687,17 @@ apiFetch(`/api/jobs/${jobId}`)
                   </div>
                 )}
                 {j.status === 'failed' && j.error_message && (
-                  <p className="mt-2 text-sm text-danger">Error: {j.error_message}</p>
+                  <p className="mb-2 text-sm text-danger">Error: {j.error_message}</p>
                 )}
                 {(j.log || j.status === 'completed' || j.status === 'failed') && (
-                  <details className="mt-2">
+                  <details>
                     <summary className="text-sm text-dk-5 cursor-pointer hover:text-mint">Job log</summary>
                     <pre className="mt-1 p-2 bg-dk-1 rounded text-xs text-left overflow-x-auto whitespace-pre-wrap font-mono text-dk-5">{j.log || 'No log entries.'}</pre>
                   </details>
                 )}
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          />
         )}
       </div>
 
@@ -757,13 +829,12 @@ apiFetch(`/api/jobs/${jobId}`)
                       )}
                     </div>
                   {wizardParts.length > WIZARD_PARTS_PAGE_SIZE && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-dk-5/80">Page {wizardPartsPage} of {wizardPartsTotalPages}</span>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setWizardPartsPage(p => Math.max(1, p - 1))} disabled={wizardPartsPage <= 1} className="px-2 py-1 border rounded disabled:opacity-50">Previous</button>
-                        <button type="button" onClick={() => setWizardPartsPage(p => Math.min(wizardPartsTotalPages, p + 1))} disabled={wizardPartsPage >= wizardPartsTotalPages} className="px-2 py-1 border rounded disabled:opacity-50">Next</button>
-                      </div>
-                    </div>
+                    <Pagination
+                      page={wizardPartsPage}
+                      totalPages={wizardPartsTotalPages}
+                      onPageChange={setWizardPartsPage}
+                      totalCount={wizardParts.length}
+                    />
                   )}
                 </div>
                 )

@@ -8,6 +8,7 @@ from backend.models.schemas import SetSearchResult, SetDetail
 from backend.api.integrations.rebrickable import RebrickableClient, CACHE_KEY_SET, CACHE_KEY_SET_INDEX
 from backend.database import get_db, SearchHistory
 from backend.core.api_cache import DbApiCache
+from backend.auth import get_current_user
 from datetime import datetime
 import json
 
@@ -55,7 +56,8 @@ async def search_sets(
     query: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Search for LEGO sets by name or number. Returns paginated results."""
     try:
@@ -125,7 +127,8 @@ async def search_sets(
 async def search_suggest(
     q: str = Query("", min_length=0),
     limit: int = Query(10, ge=1, le=50),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Predictive search from cache and search history only (no Rebrickable call)."""
     if not q or not q.strip():
@@ -169,7 +172,8 @@ async def search_suggest(
 @router.get("/search/history", response_model=List[str])
 async def get_search_history(
     limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Return recent search queries (newest first)."""
     rows = db.query(SearchHistory.query).order_by(
@@ -187,7 +191,8 @@ async def get_search_history(
 @router.delete("/search/history")
 async def clear_search_history_item(
     query: str = Query(..., description="Exact query to remove"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Remove one search history entry (by exact query)."""
     db.query(SearchHistory).filter(SearchHistory.query == query).delete()
@@ -196,7 +201,10 @@ async def clear_search_history_item(
 
 
 @router.delete("/search/history/clear")
-async def clear_all_search_history(db: Session = Depends(get_db)):
+async def clear_all_search_history(
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Clear all search history entries."""
     count = db.query(SearchHistory).count()
     db.query(SearchHistory).delete()
@@ -207,7 +215,8 @@ async def clear_all_search_history(db: Session = Depends(get_db)):
 @router.get("/sets/{set_num}", response_model=SetDetail)
 async def get_set_detail(
     set_num: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Get detailed information about a specific set."""
     try:
@@ -266,7 +275,11 @@ async def get_set_detail(
 
 
 @router.get("/sets/{set_num}/parts")
-async def get_set_parts(set_num: str, db: Session = Depends(get_db)) -> List[Dict]:
+async def get_set_parts(
+    set_num: str, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+) -> List[Dict]:
     """Get parts list for a specific set.
     
     Args:

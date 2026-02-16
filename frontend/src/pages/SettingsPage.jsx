@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { apiFetch } from '../api'
 import CacheManagementContent from '../components/CacheManagementContent'
+import { DataTable, Badge, LoadingState } from '../components/ui'
 
 function SettingsPage() {
   const navigate = useNavigate()
@@ -232,7 +233,7 @@ function SettingsPage() {
   }
 
   if (loading) {
-    return <div className="text-center py-8 text-dk-5">Loading...</div>
+    return <LoadingState />
   }
 
   const tabs = [
@@ -688,30 +689,24 @@ function SettingsPage() {
                     <h3 className="text-lg font-semibold text-dk-5 mb-2">Migrations</h3>
                     {databaseInfo.migrations && databaseInfo.migrations.length > 0 ? (
                       <div className="border border-dk-3 rounded overflow-hidden">
-                        <table className="w-full text-sm text-left">
-                          <thead className="bg-dk-1 text-dk-5/80">
-                            <tr>
-                              <th className="px-4 py-2 font-medium">Revision</th>
-                              <th className="px-4 py-2 font-medium">Description</th>
-                              <th className="px-4 py-2 font-medium">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="text-dk-5">
-                            {databaseInfo.migrations.map((m) => (
-                              <tr key={m.revision_id} className="border-t border-dk-3">
-                                <td className="px-4 py-2 font-mono">{m.revision_id}</td>
-                                <td className="px-4 py-2">{m.description}</td>
-                                <td className="px-4 py-2">
-                                  {m.applied ? (
-                                    <span className="text-mint">Applied</span>
-                                  ) : (
-                                    <span className="text-dk-5/70">Pending</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        <DataTable
+                          columns={[
+                            { key: 'revision_id', label: 'Revision', className: 'font-mono' },
+                            { key: 'description', label: 'Description' },
+                            { 
+                              key: 'applied', 
+                              label: 'Status',
+                              render: (row) => row.applied ? (
+                                <Badge variant="success">Applied</Badge>
+                              ) : (
+                                <span className="text-dk-5/70">Pending</span>
+                              )
+                            }
+                          ]}
+                          data={databaseInfo.migrations}
+                          getRowKey={(row) => row.revision_id}
+                          emptyMessage="No migrations found."
+                        />
                       </div>
                     ) : (
                       <p className="text-sm text-dk-5/80">No migrations found.</p>
@@ -723,22 +718,15 @@ function SettingsPage() {
                   <div>
                     <h3 className="text-lg font-semibold text-dk-5 mb-2">Table row counts</h3>
                     <div className="border border-dk-3 rounded overflow-hidden">
-                      <table className="w-full text-sm text-left">
-                        <thead className="bg-dk-1 text-dk-5/80">
-                          <tr>
-                            <th className="px-4 py-2 font-medium">Table</th>
-                            <th className="px-4 py-2 font-medium">Rows</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-dk-5">
-                          {databaseInfo.table_counts && Object.entries(databaseInfo.table_counts).map(([table, count]) => (
-                            <tr key={table} className="border-t border-dk-3">
-                              <td className="px-4 py-2 font-mono">{table}</td>
-                              <td className="px-4 py-2">{count}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <DataTable
+                        columns={[
+                          { key: 'table', label: 'Table', className: 'font-mono' },
+                          { key: 'count', label: 'Rows' }
+                        ]}
+                        data={databaseInfo.table_counts ? Object.entries(databaseInfo.table_counts).map(([table, count]) => ({ table, count })) : []}
+                        getRowKey={(row) => row.table}
+                        emptyMessage="No tables found."
+                      />
                     </div>
                   </div>
                 </>

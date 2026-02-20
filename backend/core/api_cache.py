@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Iterable, List, Optional, Protocol
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class DbApiCache:
         row = self._session.query(ApiCache).filter(ApiCache.key == key).first()
         if not row:
             return None
-        if row.expires_at and datetime.utcnow() >= row.expires_at:
+        if row.expires_at and datetime.now(UTC) >= row.expires_at:
             self._session.delete(row)
             self._session.commit()
             return None
@@ -57,7 +57,7 @@ class DbApiCache:
         ApiCache = self._get_model()
         expires_at = None
         if ttl_seconds is not None:
-            expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+            expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
         payload = _json.dumps(value)
         row = self._session.query(ApiCache).filter(ApiCache.key == key).first()
         if row:

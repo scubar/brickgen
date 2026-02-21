@@ -155,7 +155,7 @@ def init_db():
     # Run from project root so script_location resolves
     project_root = Path(__file__).resolve().parent.parent
     alembic_cfg = Config(str(project_root / "alembic.ini"))
-    alembic_cfg.set_main_option("script_location", str(project_root / "alembic"))
+    alembic_cfg.set_main_option("script_location", str(project_root / "backend" / "alembic"))
     alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.database_path}")
     command.upgrade(alembic_cfg, "head")
 

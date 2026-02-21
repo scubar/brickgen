@@ -61,7 +61,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <div className="min-h-screen bg-dk-1 flex flex-col pb-16">
+        <div className="min-h-screen bg-dk-1 flex flex-col">
           <Header />
           <main className="container mx-auto px-4 py-8 flex-1">
             <ApiErrorProvider>

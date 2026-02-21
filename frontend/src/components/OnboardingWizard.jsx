@@ -17,6 +17,7 @@ function OnboardingWizard({ onComplete }) {
   const [isDownloading, setIsDownloading] = useState(false)
   const [projectCreated, setProjectCreated] = useState(false)
   const [showConfirmDismiss, setShowConfirmDismiss] = useState(false)
+  const [hasSearchRun, setHasSearchRun] = useState(false)
 
   useEffect(() => {
     checkLdrawStatus()
@@ -99,6 +100,26 @@ function OnboardingWizard({ onComplete }) {
   const handleCancelDismiss = () => {
     setShowConfirmDismiss(false)
   }
+
+  const pageMatchesPath = (page, pathname) => {
+    if (page === '/') return pathname === '/'
+    return pathname.startsWith(page)
+  }
+
+  useEffect(() => {
+    const onSearchRun = () => {
+      setHasSearchRun(true)
+      setCurrentStep((prev) => {
+        if (prev === 4 && location.pathname === '/') {
+          return 5
+        }
+        return prev
+      })
+    }
+
+    window.addEventListener('onboarding:search-run', onSearchRun)
+    return () => window.removeEventListener('onboarding:search-run', onSearchRun)
+  }, [location.pathname])
 
   const steps = [
     {
@@ -192,7 +213,7 @@ function OnboardingWizard({ onComplete }) {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => navigate('/settings')}
+              onClick={() => navigate('/settings?tab=ldview')}
               className="flex-1 px-4 py-2 bg-dk-3 text-dk-5 rounded-lg hover:bg-dk-3/80 transition text-sm"
             >
               Customize
@@ -300,7 +321,7 @@ function OnboardingWizard({ onComplete }) {
           </button>
         </div>
       ),
-      showOnPages: ['/set/', '/']
+      showOnPages: ['/set/', '/', '/projects', '/projects/']
     },
     {
       title: 'Open Your Project',
@@ -313,7 +334,7 @@ function OnboardingWizard({ onComplete }) {
           </p>
         </div>
       ),
-      showOnPages: ['/projects']
+      showOnPages: ['/projects', '/projects/']
     },
     {
       title: 'Generate STL Files',
@@ -369,27 +390,19 @@ function OnboardingWizard({ onComplete }) {
   // Check if wizard should be shown on current page
   const shouldShowOnCurrentPage = () => {
     if (!currentStepData.showOnPages) return true
-    return currentStepData.showOnPages.some(page => location.pathname.startsWith(page))
+    return currentStepData.showOnPages.some((page) => pageMatchesPath(page, location.pathname))
   }
   
   // Auto-advance steps based on location
   useEffect(() => {
-    if (currentStep === 4 && location.pathname === '/') {
-      // Already on search page, stay on step 4
-    } else if (currentStep === 4 && location.pathname.startsWith('/set/')) {
-      // User navigated to set detail, advance to step 5
+    if (currentStep === 4 && hasSearchRun && location.pathname === '/') {
+      // Search has been run on search page; advance to Select Set guidance
       setCurrentStep(5)
-    } else if (currentStep === 5 && location.pathname === '/') {
-      // User went back to search, go back to step 4
-      setCurrentStep(4)
-    } else if (currentStep === 7 && location.pathname.startsWith('/projects/') && location.pathname !== '/projects') {
-      // User opened a specific project, advance to step 9 (generate STLs)
-      setCurrentStep(9)
-    } else if (currentStep === 8 && location.pathname.startsWith('/projects/') && location.pathname !== '/projects') {
-      // User opened a specific project from projects page, advance to step 9
-      setCurrentStep(9)
+    } else if (currentStep === 5 && location.pathname.startsWith('/set/')) {
+      // User selected a set; advance to project creation guidance
+      setCurrentStep(6)
     }
-  }, [location.pathname, currentStep])
+  }, [location.pathname, currentStep, hasSearchRun])
 
   // Don't render if we're on a page that shouldn't show the wizard for this step
   if (!shouldShowOnCurrentPage()) {
@@ -448,6 +461,25 @@ function OnboardingWizard({ onComplete }) {
               title={`Step ${idx + 1}`}
             />
           ))}
+        </div>
+
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCurrentStep((prev) => Math.max(0, prev - 1))}
+            disabled={currentStep === 0}
+            className="px-2 py-1 text-xs bg-dk-3 text-dk-5 rounded hover:bg-dk-3/80 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            ← Prev
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentStep((prev) => Math.min(steps.length - 1, prev + 1))}
+            disabled={currentStep === steps.length - 1}
+            className="px-2 py-1 text-xs bg-dk-3 text-dk-5 rounded hover:bg-dk-3/80 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            Next →
+          </button>
         </div>
       </ContextualDialog>
 

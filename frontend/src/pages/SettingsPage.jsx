@@ -4,15 +4,27 @@ import { apiFetch } from '../api'
 import CacheManagementContent from '../components/CacheManagementContent'
 import { DataTable, Badge, LoadingState } from '../components/ui'
 
+const NON_PATH_TABS = new Set(['general', 'parts', 'ldview'])
+
+const resolveActiveTabFromLocation = (pathname, search) => {
+  const params = new URLSearchParams(search)
+  const queryTab = params.get('tab')
+
+  if (queryTab && NON_PATH_TABS.has(queryTab)) {
+    return queryTab
+  }
+
+  if (pathname === '/settings/cache') return 'cache'
+  if (pathname === '/settings/database') return 'database'
+  return 'general'
+}
+
 function SettingsPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === 'undefined') return 'general'
-    const p = window.location.pathname
-    if (p === '/settings/cache') return 'cache'
-    if (p === '/settings/database') return 'database'
-    return 'general'
+    return resolveActiveTabFromLocation(window.location.pathname, window.location.search)
   })
   const [settings, setSettings] = useState({
     default_plate_width: 220,
@@ -95,9 +107,8 @@ function SettingsPage() {
     if (activeTab === 'database') fetchDatabaseInfo()
   }, [activeTab])
   useEffect(() => {
-    if (location.pathname === '/settings/cache') setActiveTab('cache')
-    else if (location.pathname === '/settings/database') setActiveTab('database')
-  }, [location.pathname])
+    setActiveTab(resolveActiveTabFromLocation(location.pathname, location.search))
+  }, [location.pathname, location.search])
 
   const fetchSettings = async () => {
     try {
@@ -331,7 +342,7 @@ function SettingsPage() {
     setMessage(null)
     if (id === 'cache') navigate('/settings/cache')
     else if (id === 'database') navigate('/settings/database')
-    else navigate('/settings')
+    else navigate(`/settings?tab=${id}`)
   }
 
   return (

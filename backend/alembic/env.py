@@ -7,7 +7,7 @@ _project_root = Path(__file__).resolve().parents[2]
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import engine_from_config, event
 from sqlalchemy import pool
 from alembic import context
 from backend.config import settings
@@ -25,7 +25,7 @@ import logging
 logging.getLogger("alembic").setLevel(logging.INFO)
 
 # Import Base so that target_metadata is available for autogenerate
-from backend.database import Base
+from backend.database import Base, apply_sqlite_pragmas
 target_metadata = Base.metadata
 
 
@@ -50,6 +50,11 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+
+    if db_url.startswith("sqlite"):
+        @event.listens_for(connectable, "connect")
+        def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+            apply_sqlite_pragmas(dbapi_connection)
 
     with connectable.connect() as connection:
         context.configure(

@@ -1,6 +1,6 @@
 """Database models and session management."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float, UniqueConstraint, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float, UniqueConstraint, create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 from backend.config import settings
 
@@ -144,6 +144,27 @@ engine = create_engine(
     f"sqlite:///{settings.database_path}",
     connect_args={"check_same_thread": False}
 )
+
+
+def apply_sqlite_pragmas(dbapi_connection) -> None:
+    """Apply SQLite PRAGMAs for WAL mode and predictable file growth behavior."""
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA wal_autocheckpoint=1000;")
+        cursor.execute("PRAGMA journal_size_limit=67108864;")
+        cursor.execute("PRAGMA busy_timeout=5000;")
+        cursor.execute("PRAGMA auto_vacuum=INCREMENTAL;")
+    finally:
+        cursor.close()
+
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+    """Ensure each SQLite connection gets runtime PRAGMA defaults."""
+    apply_sqlite_pragmas(dbapi_connection)
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

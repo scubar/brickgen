@@ -42,11 +42,10 @@ COPY backend/Pipfile ./
 # --skip-lock skips lock file and installs directly from Pipfile
 RUN pipenv install --system --skip-lock
 
-# Copy backend code
+# Copy backend code (includes backend/alembic)
 COPY backend/ ./backend/
-# Copy Alembic (migrations run on startup from /app)
+# Copy Alembic config (migrations run on startup from /app)
 COPY alembic.ini ./
-COPY alembic/ ./alembic/
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /app/frontend/dist ./backend/static

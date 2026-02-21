@@ -1,12 +1,12 @@
 # Multi-stage Dockerfile for BrickGen
 # Stage 1: Build frontend
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
 # Copy frontend files
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci --no-audit --no-fund --prefer-offline=false
 
 COPY frontend/ ./
 RUN npm run build
@@ -42,11 +42,10 @@ COPY backend/Pipfile ./
 # --skip-lock skips lock file and installs directly from Pipfile
 RUN pipenv install --system --skip-lock
 
-# Copy backend code
+# Copy backend code (includes backend/alembic)
 COPY backend/ ./backend/
-# Copy Alembic (migrations run on startup from /app)
+# Copy Alembic config (migrations run on startup from /app)
 COPY alembic.ini ./
-COPY alembic/ ./alembic/
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /app/frontend/dist ./backend/static

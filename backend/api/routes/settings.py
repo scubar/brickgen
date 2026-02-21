@@ -649,7 +649,7 @@ async def get_database_info(db: Session = Depends(get_db),
 
     # __file__ is backend/api/routes/settings.py -> backend is parent.parent.parent, project root is parent.parent.parent.parent
     project_root = Path(__file__).resolve().parent.parent.parent.parent
-    script_location = project_root / "alembic"
+    script_location = project_root / "backend" / "alembic"
     script_dir = ScriptDirectory(str(script_location))
     applied_ids = _get_applied_revision_ids(script_dir, current_revision)
 

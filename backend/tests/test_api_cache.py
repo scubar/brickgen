@@ -39,7 +39,7 @@ class TestDbApiCacheGet:
         _chainable_query(session, first_result=None)
         cache = DbApiCache(session)
         with patch("backend.core.api_cache.datetime") as mdt:
-            mdt.utcnow.return_value = datetime(2025, 2, 10, 12, 0, 0)
+            mdt.now.return_value = datetime(2025, 2, 10, 12, 0, 0)
             assert cache.get("missing") is None
         session.query.return_value.filter.return_value.first.assert_called_once()
 
@@ -57,7 +57,7 @@ class TestDbApiCacheGet:
         _chainable_query(session, first_result=row)
         cache = DbApiCache(session)
         with patch("backend.core.api_cache.datetime") as mdt:
-            mdt.utcnow.return_value = datetime(2025, 2, 10)
+            mdt.now.return_value = datetime(2025, 2, 10)
             assert cache.get("k") is None
         session.delete.assert_called_once_with(row)
         session.commit.assert_called_once()
@@ -78,7 +78,7 @@ class TestDbApiCacheSet:
         _chainable_query(session, first_result=None)
         cache = DbApiCache(session)
         with patch("backend.core.api_cache.datetime") as mdt:
-            mdt.utcnow.return_value = datetime(2025, 2, 10, 12, 0, 0)
+            mdt.now.return_value = datetime(2025, 2, 10, 12, 0, 0)
             cache.set("newkey", {"x": 1})
         session.add.assert_called_once()
         added = session.add.call_args[0][0]
@@ -103,7 +103,7 @@ class TestDbApiCacheSet:
         _chainable_query(session, first_result=None)
         cache = DbApiCache(session)
         with patch("backend.core.api_cache.datetime") as mdt:
-            mdt.utcnow.return_value = datetime(2025, 2, 10, 12, 0, 0)
+            mdt.now.return_value = datetime(2025, 2, 10, 12, 0, 0)
             with patch("backend.core.api_cache.timedelta") as mtd:
                 mtd.return_value = MagicMock()
                 cache.set("k", 42, ttl_seconds=60)

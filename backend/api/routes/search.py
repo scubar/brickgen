@@ -9,7 +9,7 @@ from backend.api.integrations.rebrickable import RebrickableClient, CACHE_KEY_SE
 from backend.database import get_db, SearchHistory
 from backend.core.api_cache import DbApiCache
 from backend.auth import get_current_user
-from datetime import datetime
+from datetime import UTC, datetime
 import json
 
 logger = logging.getLogger(__name__)
@@ -261,7 +261,7 @@ async def get_set_detail(
             parts_count = result.get("pieces")
 
         # Cache the result (include cached_at for response)
-        result["cached_at"] = datetime.utcnow().isoformat()
+        result["cached_at"] = datetime.now(UTC).isoformat()
         cache.set(f"{CACHE_KEY_SET}{result['set_num']}", result)
         _update_set_index(cache, result["set_num"], result.get("name", ""))
 

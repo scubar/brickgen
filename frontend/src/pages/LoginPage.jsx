@@ -44,7 +44,7 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-12rem)] flex items-center justify-center">
+    <div className="h-full flex items-center justify-center">
       <div className="bg-dk-2 p-8 rounded-lg shadow-lg w-full max-w-md border border-dk-3">
         <h1 className="text-3xl font-bold text-center mb-6 text-dk-7">BrickGen Login</h1>
         

@@ -121,6 +121,7 @@ class SettingsResponse(BaseModel):
     ldview_sort_transparent: bool = True
     ldview_use_stipple: bool = False
     ldview_memory_usage: int = 2
+    onboarding_wizard_complete: bool = False
 
     @field_validator("stl_scale_factor", mode="before")
     @classmethod
@@ -182,6 +183,7 @@ class SettingsUpdate(BaseModel):
     ldview_sort_transparent: Optional[bool] = None
     ldview_use_stipple: Optional[bool] = None
     ldview_memory_usage: Optional[int] = None
+    onboarding_wizard_complete: Optional[bool] = None
 
 
 class CacheStats(BaseModel):

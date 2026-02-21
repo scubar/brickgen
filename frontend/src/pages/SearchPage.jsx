@@ -129,6 +129,14 @@ function SearchPage() {
       setPrevPage(data.previous ?? null)
       setPage(data.page ?? pageNum)
       setPageSize(data.page_size ?? pageSize)
+      window.dispatchEvent(new CustomEvent('onboarding:search-run', {
+        detail: {
+          query,
+          count: data.count ?? 0,
+          page: data.page ?? pageNum,
+          pageSize: data.page_size ?? pageSize,
+        },
+      }))
       setShowSuggest(false)
       fetchHistory()
     } catch (err) {

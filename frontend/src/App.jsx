@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react'
+import OnboardingWizard from './components/OnboardingWizard'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Header from './components/Header'
 import ApiErrorProvider from './components/ApiErrorProvider'
@@ -10,6 +12,7 @@ import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import AttributionsPage from './pages/AttributionsPage'
 import DocumentationPage from './pages/DocumentationPage'
+import { apiFetch } from './api'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -30,10 +33,35 @@ function ProtectedRoute({ children }) {
 }
 
 function App() {
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true)
+
+  useEffect(() => {
+    checkOnboardingStatus()
+  }, [])
+
+  const checkOnboardingStatus = async () => {
+    try {
+      const r = await apiFetch('/api/settings')
+      if (r.ok) {
+        const data = await r.json()
+        setShowOnboarding(!data.onboarding_wizard_complete)
+      }
+    } catch (e) {
+      console.error('Failed to check onboarding status:', e)
+    } finally {
+      setCheckingOnboarding(false)
+    }
+  }
+
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false)
+  }
+
   return (
     <Router>
       <AuthProvider>
-        <div className="min-h-screen bg-dk-1 flex flex-col pb-16">
+        <div className="min-h-screen bg-dk-1 flex flex-col">
           <Header />
           <main className="container mx-auto px-4 py-8 flex-1">
             <ApiErrorProvider>
@@ -54,6 +82,10 @@ function App() {
           <footer className="border-t border-dk-3 bg-dk-2 mt-auto py-3 px-4 text-center text-sm text-dk-5">
             This project is not compatible with LEGO&trade;. LEGO&trade; is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.
           </footer>
+          {/* Show onboarding wizard if not completed */}
+          {!checkingOnboarding && showOnboarding && (
+            <OnboardingWizard onComplete={handleOnboardingComplete} />
+          )}
         </div>
       </AuthProvider>
     </Router>

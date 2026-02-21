@@ -32,6 +32,9 @@ function DocumentationPage() {
       </p>
 
       <DocSection title="Getting started">
+        <DocNote variant="info" title="Onboarding Wizard">
+          When you first open BrickGen, an interactive onboarding wizard will guide you through the initial setup, including downloading the LDraw library and explaining key settings. You can skip it anytime and complete setup manually.
+        </DocNote>
         <ol className="list-decimal list-inside space-y-2">
           <li><strong>Search for a set</strong> — Use the search box on the home page. For best results with API limits (see below), find the set on <a href="https://rebrickable.com" target="_blank" rel="noopener noreferrer" className="text-mint hover:underline">Rebrickable</a> and copy the <strong>set number</strong> (e.g. <code className="bg-dk-3 px-1 rounded">21348-1</code>) into Brickgen.</li>
           <li><strong>Open set details</strong> — Click a set in the results to see its details and parts list.</li>

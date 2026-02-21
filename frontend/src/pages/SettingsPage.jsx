@@ -4,15 +4,27 @@ import { apiFetch } from '../api'
 import CacheManagementContent from '../components/CacheManagementContent'
 import { DataTable, Badge, LoadingState } from '../components/ui'
 
+const NON_PATH_TABS = new Set(['general', 'parts', 'ldview'])
+
+const resolveActiveTabFromLocation = (pathname, search) => {
+  const params = new URLSearchParams(search)
+  const queryTab = params.get('tab')
+
+  if (queryTab && NON_PATH_TABS.has(queryTab)) {
+    return queryTab
+  }
+
+  if (pathname === '/settings/cache') return 'cache'
+  if (pathname === '/settings/database') return 'database'
+  return 'general'
+}
+
 function SettingsPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === 'undefined') return 'general'
-    const p = window.location.pathname
-    if (p === '/settings/cache') return 'cache'
-    if (p === '/settings/database') return 'database'
-    return 'general'
+    return resolveActiveTabFromLocation(window.location.pathname, window.location.search)
   })
   const [settings, setSettings] = useState({
     default_plate_width: 220,
@@ -95,9 +107,8 @@ function SettingsPage() {
     if (activeTab === 'database') fetchDatabaseInfo()
   }, [activeTab])
   useEffect(() => {
-    if (location.pathname === '/settings/cache') setActiveTab('cache')
-    else if (location.pathname === '/settings/database') setActiveTab('database')
-  }, [location.pathname])
+    setActiveTab(resolveActiveTabFromLocation(location.pathname, location.search))
+  }, [location.pathname, location.search])
 
   const fetchSettings = async () => {
     try {
@@ -331,7 +342,7 @@ function SettingsPage() {
     setMessage(null)
     if (id === 'cache') navigate('/settings/cache')
     else if (id === 'database') navigate('/settings/database')
-    else navigate('/settings')
+    else navigate(`/settings?tab=${id}`)
   }
 
   return (
@@ -431,6 +442,31 @@ function SettingsPage() {
                     These paths are configured via environment variables and cannot be changed at runtime.
                   </p>
                 </div>
+              </div>
+
+              <div className="pt-6 border-t border-dk-3">
+                <h2 className="text-xl font-bold mb-4 text-dk-5">Onboarding Wizard</h2>
+                <p className="text-sm text-dk-5/80 mb-4">
+                  Rerun the onboarding wizard to go through the initial setup guide again. This will cover LDraw library download, settings configuration, and project creation.
+                </p>
+                <button
+                  onClick={async () => {
+                    if (!confirm('Restart the onboarding wizard? This will reset the completion status.')) return
+                    try {
+                      await apiFetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ onboarding_wizard_complete: false })
+                      })
+                      window.location.reload()
+                    } catch (e) {
+                      setMessage({ type: 'error', text: 'Failed to restart wizard' })
+                    }
+                  }}
+                  className="px-6 py-2 bg-dk-3 text-dk-5 rounded hover:bg-mint hover:text-dk-1 transition font-semibold"
+                >
+                  Restart Wizard
+                </button>
               </div>
             </div>
           )}

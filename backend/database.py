@@ -12,12 +12,35 @@ class Project(Base):
     __tablename__ = "projects"
 
     id = Column(String, primary_key=True)  # UUID
-    set_num = Column(String, index=True)
+    set_num = Column(String, index=True, nullable=True)
     name = Column(String)  # user-defined project name
     set_name = Column(String, nullable=True)  # from set data for display
     image_url = Column(String, nullable=True)
+    is_custom = Column(Boolean, default=False, nullable=False)  # True = custom project (no set)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProjectPart(Base):
+    """A part belonging to a custom project."""
+    __tablename__ = "project_parts"
+
+    id = Column(String, primary_key=True)  # UUID
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    part_num = Column(String, nullable=False)  # LDraw part number (e.g. "3001")
+    quantity = Column(Integer, default=1, nullable=False)
+    color = Column(String, nullable=True)   # human-readable color name
+    color_rgb = Column(String, nullable=True)  # hex RGB e.g. "FF5500"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class LDrawPartIndex(Base):
+    """Index of parts available in the local LDraw library."""
+    __tablename__ = "ldraw_part_index"
+
+    part_num = Column(String, primary_key=True)  # filename stem, e.g. "3001"
+    description = Column(String, nullable=True)   # from first line of .dat file
+    indexed_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Job(Base):

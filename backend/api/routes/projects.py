@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
-from backend.database import get_db, Project, Job
+from backend.database import get_db, Project, Job, ProjectPart
 from backend.auth import get_current_user
 from backend.config import settings
 from backend.version import __version__
@@ -18,18 +18,46 @@ router = APIRouter()
 
 
 class ProjectCreate(BaseModel):
-    set_num: str
+    set_num: Optional[str] = None  # None for custom projects
     name: str = Field(..., min_length=1)
+    is_custom: bool = False
+
+    @model_validator(mode="after")
+    def set_num_required_for_non_custom(self):
+        if not self.is_custom and not self.set_num:
+            raise ValueError("set_num is required for non-custom projects")
+        return self
 
 
 class ProjectResponse(BaseModel):
     id: str
-    set_num: str
+    set_num: Optional[str] = None
     name: str
     set_name: Optional[str] = None
     image_url: Optional[str] = None
+    is_custom: bool = False
     created_at: str
     existing_project_for_set: Optional[bool] = None  # True if another project with same set exists
+
+
+class ProjectPartCreate(BaseModel):
+    part_num: str = Field(..., min_length=1)
+    quantity: int = Field(default=1, ge=1, le=9999)
+    color: Optional[str] = None
+    color_rgb: Optional[str] = None
+
+
+class ProjectPartUpdate(BaseModel):
+    quantity: int = Field(..., ge=1, le=9999)
+
+
+class ProjectPartResponse(BaseModel):
+    id: str
+    project_id: str
+    part_num: str
+    quantity: int
+    color: Optional[str] = None
+    color_rgb: Optional[str] = None
 
 
 class JobCreateBody(BaseModel):
@@ -75,6 +103,7 @@ async def list_projects(db: Session = Depends(get_db),
             name=p.name,
             set_name=p.set_name,
             image_url=p.image_url,
+            is_custom=bool(p.is_custom),
             created_at=p.created_at.isoformat() if p.created_at else ""
         )
         for p in rows
@@ -84,7 +113,30 @@ async def list_projects(db: Session = Depends(get_db),
 @router.post("/projects", response_model=ProjectResponse)
 async def create_project(data: ProjectCreate, db: Session = Depends(get_db),
     current_user: str = Depends(get_current_user)):
-    """Create a project for a set. Optionally warn if another project references the same set."""
+    """Create a project. For set-based projects, provide set_num; for custom projects set is_custom=true."""
+    if data.is_custom:
+        project_id = str(uuid.uuid4())
+        project = Project(
+            id=project_id,
+            set_num=None,
+            name=data.name.strip(),
+            set_name=None,
+            image_url=None,
+            is_custom=True,
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        return ProjectResponse(
+            id=project.id,
+            set_num=project.set_num,
+            name=project.name,
+            set_name=project.set_name,
+            image_url=project.image_url,
+            is_custom=True,
+            created_at=project.created_at.isoformat() if project.created_at else "",
+        )
+
     # Resolve set display info from cache
     from backend.core.api_cache import DbApiCache
     from backend.api.integrations.rebrickable import CACHE_KEY_SET
@@ -109,7 +161,8 @@ async def create_project(data: ProjectCreate, db: Session = Depends(get_db),
         set_num=set_num_with_ver,
         name=data.name.strip(),
         set_name=set_name,
-        image_url=image_url
+        image_url=image_url,
+        is_custom=False,
     )
     db.add(project)
     db.commit()
@@ -121,6 +174,7 @@ async def create_project(data: ProjectCreate, db: Session = Depends(get_db),
         name=project.name,
         set_name=project.set_name,
         image_url=project.image_url,
+        is_custom=False,
         created_at=project.created_at.isoformat() if project.created_at else "",
         existing_project_for_set=existing_for_set
     )
@@ -139,6 +193,7 @@ async def get_project(project_id: str, db: Session = Depends(get_db),
         name=project.name,
         set_name=project.set_name,
         image_url=project.image_url,
+        is_custom=bool(project.is_custom),
         created_at=project.created_at.isoformat() if project.created_at else ""
     )
 
@@ -162,6 +217,7 @@ async def delete_project(project_id: str, db: Session = Depends(get_db),
                     logger.warning(f"Could not delete job file {job.output_file}: {e}")
 
     db.query(Job).filter(Job.project_id == project_id).delete()
+    db.query(ProjectPart).filter(ProjectPart.project_id == project_id).delete()
     db.delete(project)
     db.commit()
     return {"message": f"Project {project_id} and its jobs/files deleted"}
@@ -218,6 +274,12 @@ async def create_project_job(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if project.is_custom:
+        # Custom projects require at least one part
+        part_count = db.query(ProjectPart).filter(ProjectPart.project_id == project_id).count()
+        if part_count == 0:
+            raise HTTPException(status_code=422, detail="Custom project has no parts. Add parts before generating.")
+
     job_id = str(uuid.uuid4())
     if not claim_job_slot(job_id):
         raise HTTPException(
@@ -233,15 +295,19 @@ async def create_project_job(
             "generate_3mf": body.generate_3mf,
             "generate_stl": body.generate_stl,
             "per_part_rotation": body.per_part_rotation or {},
+            "is_custom": bool(project.is_custom),
         }
         if body.scale_factor is not None:
             settings_obj["scale_factor"] = float(body.scale_factor)
         settings_json = json.dumps(settings_obj)
 
+        # For custom projects use a placeholder set_num
+        set_num_for_job = project.set_num or f"custom:{project_id}"
+
         job = Job(
             id=job_id,
             project_id=project_id,
-            set_num=project.set_num,
+            set_num=set_num_for_job,
             status="pending",
             progress=0,
             plate_width=body.plate_width,
@@ -254,16 +320,42 @@ async def create_project_job(
         db.commit()
         db.refresh(job)
 
-        start_generation(
-            job_id,
-            project.set_num,
-            body.plate_width,
-            body.plate_depth,
-            body.plate_height,
-            body.bypass_cache,
-            body.generate_3mf,
-            body.generate_stl,
-        )
+        if project.is_custom:
+            from backend.api.routes.generate import start_generation_custom
+            # Gather parts from project_parts table
+            project_parts = db.query(ProjectPart).filter(ProjectPart.project_id == project_id).all()
+            parts_data = [
+                {
+                    "part_num": pp.part_num,
+                    "ldraw_id": pp.part_num,
+                    "quantity": pp.quantity,
+                    "color": pp.color,
+                    "color_rgb": pp.color_rgb,
+                    "is_spare": False,
+                }
+                for pp in project_parts
+            ]
+            start_generation_custom(
+                job_id,
+                parts_data,
+                body.plate_width,
+                body.plate_depth,
+                body.plate_height,
+                body.bypass_cache,
+                body.generate_3mf,
+                body.generate_stl,
+            )
+        else:
+            start_generation(
+                job_id,
+                project.set_num,
+                body.plate_width,
+                body.plate_depth,
+                body.plate_height,
+                body.bypass_cache,
+                body.generate_3mf,
+                body.generate_stl,
+            )
 
         return JobResponse(
             job_id=job.id,
@@ -280,3 +372,134 @@ async def create_project_job(
         db.rollback()
         release_job_slot(job_id)
         raise
+
+
+# ── Custom project part management ──────────────────────────────────────────
+
+@router.get("/projects/{project_id}/parts", response_model=List[ProjectPartResponse])
+async def list_project_parts(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """List parts added to a custom project."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    parts = db.query(ProjectPart).filter(ProjectPart.project_id == project_id).all()
+    return [
+        ProjectPartResponse(
+            id=pp.id,
+            project_id=pp.project_id,
+            part_num=pp.part_num,
+            quantity=pp.quantity,
+            color=pp.color,
+            color_rgb=pp.color_rgb,
+        )
+        for pp in parts
+    ]
+
+
+@router.post("/projects/{project_id}/parts", response_model=ProjectPartResponse)
+async def add_project_part(
+    project_id: str,
+    body: ProjectPartCreate,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """Add a part to a custom project. If the part already exists its quantity is increased."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.is_custom:
+        raise HTTPException(status_code=400, detail="Parts can only be added to custom projects")
+
+    part_num = body.part_num.strip().lower()
+    # Merge if same part_num already present
+    existing = db.query(ProjectPart).filter(
+        ProjectPart.project_id == project_id,
+        ProjectPart.part_num == part_num,
+    ).first()
+    if existing:
+        existing.quantity += body.quantity
+        db.commit()
+        db.refresh(existing)
+        return ProjectPartResponse(
+            id=existing.id,
+            project_id=existing.project_id,
+            part_num=existing.part_num,
+            quantity=existing.quantity,
+            color=existing.color,
+            color_rgb=existing.color_rgb,
+        )
+
+    pp = ProjectPart(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        part_num=part_num,
+        quantity=body.quantity,
+        color=body.color,
+        color_rgb=body.color_rgb,
+    )
+    db.add(pp)
+    db.commit()
+    db.refresh(pp)
+    return ProjectPartResponse(
+        id=pp.id,
+        project_id=pp.project_id,
+        part_num=pp.part_num,
+        quantity=pp.quantity,
+        color=pp.color,
+        color_rgb=pp.color_rgb,
+    )
+
+
+@router.patch("/projects/{project_id}/parts/{part_id}", response_model=ProjectPartResponse)
+async def update_project_part(
+    project_id: str,
+    part_id: str,
+    body: ProjectPartUpdate,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """Update the quantity of a part in a custom project."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    pp = db.query(ProjectPart).filter(
+        ProjectPart.id == part_id, ProjectPart.project_id == project_id
+    ).first()
+    if not pp:
+        raise HTTPException(status_code=404, detail="Part not found in project")
+    pp.quantity = body.quantity
+    db.commit()
+    db.refresh(pp)
+    return ProjectPartResponse(
+        id=pp.id,
+        project_id=pp.project_id,
+        part_num=pp.part_num,
+        quantity=pp.quantity,
+        color=pp.color,
+        color_rgb=pp.color_rgb,
+    )
+
+
+@router.delete("/projects/{project_id}/parts/{part_id}")
+async def remove_project_part(
+    project_id: str,
+    part_id: str,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """Remove a part from a custom project."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    pp = db.query(ProjectPart).filter(
+        ProjectPart.id == part_id, ProjectPart.project_id == project_id
+    ).first()
+    if not pp:
+        raise HTTPException(status_code=404, detail="Part not found in project")
+    db.delete(pp)
+    db.commit()
+    return {"message": f"Part {part_id} removed from project {project_id}"}

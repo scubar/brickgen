@@ -30,12 +30,13 @@ def _parse_dat_description(path: Path) -> Optional[str]:
                 line = raw.strip()
                 if not line:
                     continue
-                # LDraw line type 0 = meta/comment; first such line is the description
+                # LDraw line type 0 = meta/comment; first such line is the description.
+                # Skip pure meta-keywords: comment markers (//) and file references (FILE).
+                _SKIP_PREFIXES = ("//", "FILE", "!LDRAW_ORG", "!LICENSE", "!CATEGORY", "!KEYWORDS", "!HISTORY")
                 parts = line.split(None, 1)
                 if parts and parts[0] == "0" and len(parts) > 1:
                     desc = parts[1].strip()
-                    # Skip lines that are pure keywords (all caps, common meta lines)
-                    if desc and not desc.startswith("//") and not desc.startswith("FILE"):
+                    if desc and not any(desc.startswith(p) for p in _SKIP_PREFIXES):
                         return desc
                 break
     except Exception:

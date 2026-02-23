@@ -16,6 +16,9 @@ import json
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Prefix used as the set_num placeholder in jobs belonging to custom projects
+CUSTOM_PROJECT_SET_NUM_PREFIX = "custom:"
+
 
 class ProjectCreate(BaseModel):
     set_num: Optional[str] = None  # None for custom projects
@@ -302,7 +305,7 @@ async def create_project_job(
         settings_json = json.dumps(settings_obj)
 
         # For custom projects use a placeholder set_num
-        set_num_for_job = project.set_num or f"custom:{project_id}"
+        set_num_for_job = project.set_num or f"{CUSTOM_PROJECT_SET_NUM_PREFIX}{project_id}"
 
         job = Job(
             id=job_id,

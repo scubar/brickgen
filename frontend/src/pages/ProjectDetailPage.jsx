@@ -33,6 +33,15 @@ function ProjectDetailPage() {
   const [colorRefPage, setColorRefPage] = useState(1)
   const [deletingJobId, setDeletingJobId] = useState(null)
   const [cancellingJobId, setCancellingJobId] = useState(null)
+  // Custom project parts management
+  const [customParts, setCustomParts] = useState([])
+  const [ldrawSearchQuery, setLdrawSearchQuery] = useState('')
+  const [ldrawSearchResults, setLdrawSearchResults] = useState([])
+  const [ldrawSearching, setLdrawSearching] = useState(false)
+  const [addingPartNum, setAddingPartNum] = useState(null)
+  const [removingPartId, setRemovingPartId] = useState(null)
+  const [ldrawIndexCount, setLdrawIndexCount] = useState(null)
+  const [buildingIndex, setBuildingIndex] = useState(false)
   const WIZARD_PARTS_PAGE_SIZE = 5
   const PARTS_PAGE_SIZE = 5
   const COLOR_REF_PAGE_SIZE = 20
@@ -66,7 +75,11 @@ function ProjectDetailPage() {
   }, [projectId])
 
   useEffect(() => {
-    if (project?.set_num) {
+    if (!project) return
+    if (project.is_custom) {
+      fetchCustomParts()
+      fetchLdrawIndexStatus()
+    } else if (project.set_num) {
       apiFetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`)
         .then((r) => r.ok ? r.json() : [])
         .then(setPartsList)
@@ -74,7 +87,7 @@ function ProjectDetailPage() {
     } else {
       setPartsList([])
     }
-  }, [project?.set_num])
+  }, [project?.set_num, project?.is_custom, project?.id])
 
   useEffect(() => {
     setColorRefPage(1)
@@ -277,6 +290,102 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
+  const fetchCustomParts = async () => {
+    try {
+      const r = await apiFetch(`/api/projects/${projectId}/parts`)
+      if (r.ok) setCustomParts(await r.json())
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchLdrawIndexStatus = async () => {
+    try {
+      const r = await apiFetch('/api/ldraw-parts/index/status')
+      if (r.ok) {
+        const d = await r.json()
+        setLdrawIndexCount(d.indexed_count)
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const buildLdrawIndex = async () => {
+    if (!confirm('This will scan the local LDraw library and index all parts. This may take a moment. Proceed?')) return
+    setBuildingIndex(true)
+    try {
+      const r = await apiFetch('/api/ldraw-parts/index', { method: 'POST' })
+      if (r.ok) {
+        const d = await r.json()
+        setLdrawIndexCount(d.indexed_count)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setBuildingIndex(false)
+    }
+  }
+
+  const searchLdrawParts = async (q) => {
+    if (!q || !q.trim()) { setLdrawSearchResults([]); return }
+    setLdrawSearching(true)
+    try {
+      const r = await apiFetch(`/api/ldraw-parts/search?q=${encodeURIComponent(q.trim())}&limit=20`)
+      if (r.ok) setLdrawSearchResults(await r.json())
+      else setLdrawSearchResults([])
+    } catch (e) {
+      setLdrawSearchResults([])
+    } finally {
+      setLdrawSearching(false)
+    }
+  }
+
+  const addCustomPart = async (partNum) => {
+    setAddingPartNum(partNum)
+    try {
+      const r = await apiFetch(`/api/projects/${projectId}/parts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ part_num: partNum, quantity: 1 }),
+      })
+      if (r.ok) await fetchCustomParts()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setAddingPartNum(null)
+    }
+  }
+
+  const removeCustomPart = async (partId) => {
+    setRemovingPartId(partId)
+    try {
+      const r = await apiFetch(`/api/projects/${projectId}/parts/${partId}`, { method: 'DELETE' })
+      if (r.ok) await fetchCustomParts()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setRemovingPartId(null)
+    }
+  }
+
+  const updateCustomPartQty = async (partId, qty) => {
+    if (qty < 1 || qty > 9999) return
+    try {
+      const r = await apiFetch(`/api/projects/${projectId}/parts/${partId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: qty }),
+      })
+      if (r.ok) {
+        const updated = await r.json()
+        setCustomParts(prev => prev.map(p => p.id === partId ? updated : p))
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const TERMINAL_JOB_STATUSES = ['completed', 'failed', 'cancelled']
 
   const fetchJobs = async () => {
@@ -301,10 +410,7 @@ apiFetch(`/api/jobs/${jobId}`)
     setPreviewRotationByPart({})
     setWizardOpen(true)
     try {
-      const [settingsRes, partsRes] = await Promise.all([
-        apiFetch('/api/settings'),
-        project?.set_num ? apiFetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`) : Promise.resolve(null)
-      ])
+      const settingsRes = await apiFetch('/api/settings')
       if (settingsRes?.ok) {
         const s = await settingsRes.json()
         setWizardGlobalSettings(s)
@@ -313,14 +419,27 @@ apiFetch(`/api/jobs/${jobId}`)
         setPlateHeight(s.default_plate_height ?? 250)
         setScaleFactor(null) // use global default for new job
       }
-      if (partsRes?.ok) {
-        const partsList = await partsRes.json()
+      if (project?.is_custom) {
+        // For custom projects use the project's own parts list for per-part rotation
         const byId = new Map()
-        partsList.forEach(p => {
-          const id = p.ldraw_id || p.part_num
-          if (id && !byId.has(id)) byId.set(id, { ldraw_id: id, part_num: p.part_num, name: p.name, quantity: p.quantity })
+        customParts.forEach(p => {
+          const id = p.part_num
+          if (id && !byId.has(id)) byId.set(id, { ldraw_id: id, part_num: id, name: null, quantity: p.quantity })
         })
         setWizardParts(Array.from(byId.values()))
+      } else if (project?.set_num) {
+        const partsRes = await apiFetch(`/api/sets/${encodeURIComponent(project.set_num)}/parts`)
+        if (partsRes?.ok) {
+          const partsList = await partsRes.json()
+          const byId = new Map()
+          partsList.forEach(p => {
+            const id = p.ldraw_id || p.part_num
+            if (id && !byId.has(id)) byId.set(id, { ldraw_id: id, part_num: p.part_num, name: p.name, quantity: p.quantity })
+          })
+          setWizardParts(Array.from(byId.values()))
+        } else {
+          setWizardParts([])
+        }
       } else {
         setWizardParts([])
       }
@@ -518,14 +637,129 @@ apiFetch(`/api/jobs/${jobId}`)
       <button onClick={() => navigate('/projects')} className="mb-4 px-4 py-2 bg-dk-3 text-dk-5 rounded hover:bg-mint hover:text-dk-1 transition">← Projects</button>
       <div className="bg-dk-2 rounded-lg border border-dk-3 p-6 mb-6 flex items-start justify-between">
         <div className="flex gap-4">
-          {project.image_url && <img src={project.image_url} alt="" className="w-24 h-24 object-contain bg-dk-1 rounded" />}
+          {project.image_url
+            ? <img src={project.image_url} alt="" className="w-24 h-24 object-contain bg-dk-1 rounded" />
+            : project.is_custom
+              ? <div className="w-24 h-24 flex items-center justify-center bg-dk-1 rounded text-4xl">🧱</div>
+              : null
+          }
           <div>
             <h1 className="text-2xl font-bold text-dk-5">{project.name}</h1>
-            <p className="text-dk-5/80">{project.set_num} {project.set_name && ` · ${project.set_name}`}</p>
+            {project.is_custom
+              ? <p className="text-dk-5/80 italic text-sm">Custom project</p>
+              : <p className="text-dk-5/80">{project.set_num} {project.set_name && ` · ${project.set_name}`}</p>
+            }
           </div>
         </div>
         <button onClick={deleteProject} className="px-3 py-1 text-danger hover:text-danger/80 border border-dk-3 rounded hover:bg-dk-3">Delete project</button>
       </div>
+
+      {/* Custom project: parts management */}
+      {project.is_custom && (
+        <div className="bg-dk-2 rounded-lg border border-dk-3 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-dk-5">Parts ({customParts.length})</h2>
+            <div className="flex items-center gap-2 text-sm text-dk-5/60">
+              {ldrawIndexCount !== null && (
+                <span>{ldrawIndexCount} parts indexed</span>
+              )}
+              <button
+                onClick={buildLdrawIndex}
+                disabled={buildingIndex}
+                className="px-3 py-1 border border-dk-3 rounded text-dk-5 hover:bg-dk-3 text-xs disabled:opacity-50"
+                title="Rebuild LDraw part index from local library"
+              >
+                {buildingIndex ? 'Indexing…' : ldrawIndexCount === 0 ? 'Build index' : 'Rebuild index'}
+              </button>
+            </div>
+          </div>
+
+          {/* LDraw part search */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-dk-5 mb-1">Search LDraw parts</label>
+            {ldrawIndexCount === 0 && (
+              <p className="text-xs text-amber-400 mb-2">
+                The LDraw part index is empty. Click &quot;Build index&quot; above to index the local LDraw library before searching.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={ldrawSearchQuery}
+                onChange={(e) => setLdrawSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && searchLdrawParts(ldrawSearchQuery)}
+                placeholder="e.g. 3001 or brick 2x4"
+                className="flex-1 px-3 py-2 bg-dk-1 border border-dk-3 rounded text-dk-5 focus:outline-none focus:border-mint text-sm"
+              />
+              <button
+                onClick={() => searchLdrawParts(ldrawSearchQuery)}
+                disabled={ldrawSearching}
+                className="px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 text-sm disabled:opacity-50"
+              >
+                {ldrawSearching ? 'Searching…' : 'Search'}
+              </button>
+            </div>
+            {ldrawSearchResults.length > 0 && (
+              <div className="mt-2 border border-dk-3 rounded bg-dk-1 max-h-48 overflow-y-auto">
+                {ldrawSearchResults.map((r) => (
+                  <div key={r.part_num} className="flex items-center justify-between px-3 py-2 hover:bg-dk-2 border-b border-dk-3 last:border-0">
+                    <div>
+                      <span className="font-mono text-sm text-dk-5">{r.part_num}</span>
+                      {r.description && <span className="ml-2 text-sm text-dk-5/80">{r.description}</span>}
+                    </div>
+                    <button
+                      onClick={() => addCustomPart(r.part_num)}
+                      disabled={addingPartNum === r.part_num}
+                      className="px-3 py-1 text-xs bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50 ml-2 flex-shrink-0"
+                    >
+                      {addingPartNum === r.part_num ? 'Adding…' : '+ Add'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Current parts list */}
+          {customParts.length === 0 ? (
+            <EmptyState message="No parts yet. Search above to add parts to this project." />
+          ) : (
+            <div className="space-y-2">
+              {customParts.map((p) => (
+                <div key={p.id} className="flex items-center gap-3 p-3 bg-dk-1 rounded border border-dk-3">
+                  <img
+                    src={`/api/parts/preview/${encodeURIComponent(p.part_num)}?size=64`}
+                    alt=""
+                    className="w-10 h-10 object-contain rounded flex-shrink-0"
+                    onError={(e) => { e.target.style.display = 'none' }}
+                  />
+                  <span className="font-mono text-sm text-dk-5 flex-1">{p.part_num}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => updateCustomPartQty(p.id, p.quantity - 1)}
+                      disabled={p.quantity <= 1}
+                      className="w-7 h-7 flex items-center justify-center border border-dk-3 rounded text-dk-5 hover:bg-dk-2 disabled:opacity-30 text-lg leading-none"
+                    >−</button>
+                    <span className="w-10 text-center text-sm text-dk-5">{p.quantity}</span>
+                    <button
+                      onClick={() => updateCustomPartQty(p.id, p.quantity + 1)}
+                      disabled={p.quantity >= 9999}
+                      className="w-7 h-7 flex items-center justify-center border border-dk-3 rounded text-dk-5 hover:bg-dk-2 disabled:opacity-30 text-lg leading-none"
+                    >+</button>
+                  </div>
+                  <button
+                    onClick={() => removeCustomPart(p.id)}
+                    disabled={removingPartId === p.id}
+                    className="px-2 py-1 text-xs text-danger hover:text-danger/80 hover:bg-dk-2 rounded disabled:opacity-50"
+                  >
+                    {removingPartId === p.id ? '…' : 'Remove'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {partsList.length > 0 && (
         <details className="bg-dk-2 rounded-lg border border-dk-3 p-4 mb-6">

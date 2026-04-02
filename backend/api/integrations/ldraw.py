@@ -2,8 +2,9 @@
 import logging
 import asyncio
 import re
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 import aiohttp
 import zipfile
 import io
@@ -14,6 +15,95 @@ logger = logging.getLogger(__name__)
 LDRAW_VERSION_FILE = ".ldraw_version"
 LDRAW_UPDATES_URL = "https://library.ldraw.org/updates?latest"
 PARTS_UPDATE_PATTERN = re.compile(r"Parts Update\s+(\d{4}-\d{2})", re.IGNORECASE)
+
+
+def _parse_dat_description(path: Path) -> Optional[str]:
+    """Return the description from the first line of an LDraw .dat file.
+
+    LDraw .dat files start with a line like:
+        0 Brick  2 x  4
+    where '0' is the line type and the rest is the description.
+    """
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line:
+                    continue
+                # LDraw line type 0 = meta/comment; first such line is the description.
+                # Skip pure meta-keywords: comment markers (//) and file references (FILE).
+                _SKIP_PREFIXES = ("//", "FILE", "!LDRAW_ORG", "!LICENSE", "!CATEGORY", "!KEYWORDS", "!HISTORY")
+                parts = line.split(None, 1)
+                if parts and parts[0] == "0" and len(parts) > 1:
+                    desc = parts[1].strip()
+                    if desc and not any(desc.startswith(p) for p in _SKIP_PREFIXES):
+                        return desc
+                break
+    except Exception:
+        pass
+    return None
+
+
+def build_ldraw_part_index(db, parts_dir: Optional[Path] = None) -> int:
+    """Scan the LDraw parts directory and populate the ldraw_part_index table.
+
+    Returns the number of parts indexed.
+    """
+    from backend.database import LDrawPartIndex
+
+    if parts_dir is None:
+        parts_dir = settings.ldraw_library_path / "parts"
+
+    if not parts_dir.exists():
+        logger.warning(f"LDraw parts directory not found: {parts_dir}")
+        return 0
+
+    now = datetime.utcnow()
+    count = 0
+
+    for dat_file in sorted(parts_dir.glob("*.dat")):
+        part_num = dat_file.stem.lower()
+        description = _parse_dat_description(dat_file)
+        # Upsert: update description if part already indexed
+        existing = db.query(LDrawPartIndex).filter(LDrawPartIndex.part_num == part_num).first()
+        if existing:
+            existing.description = description
+            existing.indexed_at = now
+        else:
+            db.add(LDrawPartIndex(part_num=part_num, description=description, indexed_at=now))
+        count += 1
+        if count % 500 == 0:
+            db.flush()
+
+    db.commit()
+    logger.info(f"Indexed {count} LDraw parts")
+    return count
+
+
+def search_ldraw_part_index(db, query: str, limit: int = 20) -> List[Dict]:
+    """Search the ldraw_part_index table by part_num or description.
+
+    Returns a list of dicts with 'part_num' and 'description'.
+    """
+    from backend.database import LDrawPartIndex
+    from sqlalchemy import or_
+
+    q = query.strip().lower()
+    if not q:
+        return []
+
+    rows = (
+        db.query(LDrawPartIndex)
+        .filter(
+            or_(
+                LDrawPartIndex.part_num.ilike(f"%{q}%"),
+                LDrawPartIndex.description.ilike(f"%{q}%"),
+            )
+        )
+        .limit(limit)
+        .all()
+    )
+    return [{"part_num": r.part_num, "description": r.description} for r in rows]
 
 
 class LDrawManager:

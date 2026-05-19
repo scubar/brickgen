@@ -42,6 +42,15 @@ function ProjectDetailPage() {
   const [removingPartId, setRemovingPartId] = useState(null)
   const [ldrawIndexCount, setLdrawIndexCount] = useState(null)
   const [buildingIndex, setBuildingIndex] = useState(false)
+  // Rebrickable set import
+  const [addPartsTab, setAddPartsTab] = useState('ldraw') // 'ldraw' | 'set'
+  const [setSearchQuery, setSetSearchQuery] = useState('')
+  const [setSearchResults, setSetSearchResults] = useState([])
+  const [setSearching, setSetSearching] = useState(false)
+  const [selectedSet, setSelectedSet] = useState(null)
+  const [setPartsData, setSetPartsData] = useState([])
+  const [loadingSetParts, setLoadingSetParts] = useState(false)
+  const [importingAll, setImportingAll] = useState(false)
   const WIZARD_PARTS_PAGE_SIZE = 5
   const PARTS_PAGE_SIZE = 5
   const COLOR_REF_PAGE_SIZE = 20
@@ -63,6 +72,12 @@ function ProjectDetailPage() {
     const n = parseFloat(v)
     if (Number.isNaN(n)) return '1.0'
     return n === Math.round(n) ? Number(n).toFixed(1) : String(n)
+  }
+
+  const getPartPreviewUrl = (ldrawId, colorRgb, size = 64) => {
+    let url = `/api/parts/preview/${encodeURIComponent(ldrawId)}?size=${size}`
+    if (colorRgb) url += `&color=${encodeURIComponent(colorRgb)}`
+    return url
   }
 
   useEffect(() => {
@@ -386,6 +401,91 @@ apiFetch(`/api/jobs/${jobId}`)
     }
   }
 
+  const searchRebrickableSets = async (q) => {
+    if (!q || !q.trim()) { setSetSearchResults([]); return }
+    setSetSearching(true)
+    try {
+      const r = await apiFetch(`/api/search?query=${encodeURIComponent(q.trim())}&page=1&page_size=10`)
+      if (r.ok) {
+        const data = await r.json()
+        setSetSearchResults(data.results || [])
+      } else {
+        setSetSearchResults([])
+      }
+    } catch (e) {
+      setSetSearchResults([])
+    } finally {
+      setSetSearching(false)
+    }
+  }
+
+  const selectSetForImport = async (set) => {
+    setSelectedSet(set)
+    setSetPartsData([])
+    setLoadingSetParts(true)
+    try {
+      const r = await apiFetch(`/api/sets/${encodeURIComponent(set.set_num)}/parts`)
+      if (r.ok) {
+        const parts = await r.json()
+        setSetPartsData(parts.filter(p => !p.is_spare))
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoadingSetParts(false)
+    }
+  }
+
+  const addSetPart = async (part) => {
+    const ldrawId = part.ldraw_id || part.part_num
+    setAddingPartNum(ldrawId)
+    try {
+      const r = await apiFetch(`/api/projects/${projectId}/parts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          part_num: ldrawId,
+          quantity: part.quantity || 1,
+          color: part.color || null,
+          color_rgb: part.color_rgb || null,
+        }),
+      })
+      if (r.ok) await fetchCustomParts()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setAddingPartNum(null)
+    }
+  }
+
+  const importAllSetParts = async () => {
+    if (!setPartsData.length) return
+    setImportingAll(true)
+    try {
+      await Promise.all(
+        setPartsData
+          .filter(part => part.ldraw_id || part.part_num)
+          .map(part =>
+            apiFetch(`/api/projects/${projectId}/parts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                part_num: part.ldraw_id || part.part_num,
+                quantity: part.quantity || 1,
+                color: part.color || null,
+                color_rgb: part.color_rgb || null,
+              }),
+            })
+          )
+      )
+      await fetchCustomParts()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setImportingAll(false)
+    }
+  }
+
   const TERMINAL_JOB_STATUSES = ['completed', 'failed', 'cancelled']
 
   const fetchJobs = async () => {
@@ -659,76 +759,208 @@ apiFetch(`/api/jobs/${jobId}`)
         <div className="bg-dk-2 rounded-lg border border-dk-3 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-dk-5">Parts ({customParts.length})</h2>
-            <div className="flex items-center gap-2 text-sm text-dk-5/60">
-              {ldrawIndexCount !== null && (
-                <span>{ldrawIndexCount} parts indexed</span>
-              )}
-              <button
-                onClick={buildLdrawIndex}
-                disabled={buildingIndex}
-                className="px-3 py-1 border border-dk-3 rounded text-dk-5 hover:bg-dk-3 text-xs disabled:opacity-50"
-                title="Rebuild LDraw part index from local library"
-              >
-                {buildingIndex ? 'Indexing…' : ldrawIndexCount === 0 ? 'Build index' : 'Rebuild index'}
-              </button>
-            </div>
-          </div>
-
-          {/* LDraw part search */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-dk-5 mb-1">Search LDraw parts</label>
-            {ldrawIndexCount === 0 && (
-              <p className="text-xs text-amber-400 mb-2">
-                The LDraw part index is empty. Click &quot;Build index&quot; above to index the local LDraw library before searching.
-              </p>
-            )}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={ldrawSearchQuery}
-                onChange={(e) => setLdrawSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && searchLdrawParts(ldrawSearchQuery)}
-                placeholder="e.g. 3001 or brick 2x4"
-                className="flex-1 px-3 py-2 bg-dk-1 border border-dk-3 rounded text-dk-5 focus:outline-none focus:border-mint text-sm"
-              />
-              <button
-                onClick={() => searchLdrawParts(ldrawSearchQuery)}
-                disabled={ldrawSearching}
-                className="px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 text-sm disabled:opacity-50"
-              >
-                {ldrawSearching ? 'Searching…' : 'Search'}
-              </button>
-            </div>
-            {ldrawSearchResults.length > 0 && (
-              <div className="mt-2 border border-dk-3 rounded bg-dk-1 max-h-48 overflow-y-auto">
-                {ldrawSearchResults.map((r) => (
-                  <div key={r.part_num} className="flex items-center justify-between px-3 py-2 hover:bg-dk-2 border-b border-dk-3 last:border-0">
-                    <div>
-                      <span className="font-mono text-sm text-dk-5">{r.part_num}</span>
-                      {r.description && <span className="ml-2 text-sm text-dk-5/80">{r.description}</span>}
-                    </div>
-                    <button
-                      onClick={() => addCustomPart(r.part_num)}
-                      disabled={addingPartNum === r.part_num}
-                      className="px-3 py-1 text-xs bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50 ml-2 flex-shrink-0"
-                    >
-                      {addingPartNum === r.part_num ? 'Adding…' : '+ Add'}
-                    </button>
-                  </div>
-                ))}
+            {addPartsTab === 'ldraw' && (
+              <div className="flex items-center gap-2 text-sm text-dk-5/60">
+                {ldrawIndexCount !== null && (
+                  <span>{ldrawIndexCount} parts indexed</span>
+                )}
+                <button
+                  onClick={buildLdrawIndex}
+                  disabled={buildingIndex}
+                  className="px-3 py-1 border border-dk-3 rounded text-dk-5 hover:bg-dk-3 text-xs disabled:opacity-50"
+                  title="Rebuild LDraw part index from local library"
+                >
+                  {buildingIndex ? 'Indexing…' : ldrawIndexCount === 0 ? 'Build index' : 'Rebuild index'}
+                </button>
               </div>
             )}
           </div>
 
+          {/* Tab switcher */}
+          <div className="flex gap-1 mb-4 bg-dk-1 rounded p-1 w-fit">
+            <button
+              onClick={() => setAddPartsTab('ldraw')}
+              className={`px-3 py-1.5 rounded text-sm font-medium transition ${addPartsTab === 'ldraw' ? 'bg-dk-2 text-mint shadow' : 'text-dk-5/70 hover:text-dk-5'}`}
+            >
+              LDraw library
+            </button>
+            <button
+              onClick={() => setAddPartsTab('set')}
+              className={`px-3 py-1.5 rounded text-sm font-medium transition ${addPartsTab === 'set' ? 'bg-dk-2 text-mint shadow' : 'text-dk-5/70 hover:text-dk-5'}`}
+            >
+              From Rebrickable set
+            </button>
+          </div>
+
+          {/* LDraw part search */}
+          {addPartsTab === 'ldraw' && (
+            <div className="mb-4">
+              {ldrawIndexCount === 0 && (
+                <p className="text-xs text-amber-400 mb-2">
+                  The LDraw part index is empty. Click &quot;Build index&quot; above to index the local LDraw library before searching.
+                </p>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={ldrawSearchQuery}
+                  onChange={(e) => setLdrawSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && searchLdrawParts(ldrawSearchQuery)}
+                  placeholder="e.g. 3001 or brick 2x4"
+                  className="flex-1 px-3 py-2 bg-dk-1 border border-dk-3 rounded text-dk-5 focus:outline-none focus:border-mint text-sm"
+                />
+                <button
+                  onClick={() => searchLdrawParts(ldrawSearchQuery)}
+                  disabled={ldrawSearching}
+                  className="px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 text-sm disabled:opacity-50"
+                >
+                  {ldrawSearching ? 'Searching…' : 'Search'}
+                </button>
+              </div>
+              {ldrawSearchResults.length > 0 && (
+                <div className="mt-2 border border-dk-3 rounded bg-dk-1 max-h-48 overflow-y-auto">
+                  {ldrawSearchResults.map((r) => (
+                    <div key={r.part_num} className="flex items-center justify-between px-3 py-2 hover:bg-dk-2 border-b border-dk-3 last:border-0">
+                      <div>
+                        <span className="font-mono text-sm text-dk-5">{r.part_num}</span>
+                        {r.description && <span className="ml-2 text-sm text-dk-5/80">{r.description}</span>}
+                      </div>
+                      <button
+                        onClick={() => addCustomPart(r.part_num)}
+                        disabled={addingPartNum === r.part_num}
+                        className="px-3 py-1 text-xs bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50 ml-2 flex-shrink-0"
+                      >
+                        {addingPartNum === r.part_num ? 'Adding…' : '+ Add'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Import from Rebrickable set */}
+          {addPartsTab === 'set' && (
+            <div className="mb-4">
+              {!selectedSet ? (
+                <>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={setSearchQuery}
+                      onChange={(e) => setSetSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && searchRebrickableSets(setSearchQuery)}
+                      placeholder="e.g. 75192 or Millennium Falcon"
+                      className="flex-1 px-3 py-2 bg-dk-1 border border-dk-3 rounded text-dk-5 focus:outline-none focus:border-mint text-sm"
+                    />
+                    <button
+                      onClick={() => searchRebrickableSets(setSearchQuery)}
+                      disabled={setSearching}
+                      className="px-4 py-2 bg-mint text-dk-1 rounded hover:opacity-90 text-sm disabled:opacity-50"
+                    >
+                      {setSearching ? 'Searching…' : 'Search'}
+                    </button>
+                  </div>
+                  {setSearchResults.length > 0 && (
+                    <div className="border border-dk-3 rounded bg-dk-1 max-h-72 overflow-y-auto">
+                      {setSearchResults.map((s) => (
+                        <button
+                          key={s.set_num}
+                          onClick={() => selectSetForImport(s)}
+                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-dk-2 border-b border-dk-3 last:border-0 text-left"
+                        >
+                          {s.image_url
+                            ? <img src={s.image_url} alt="" className="w-10 h-10 object-contain flex-shrink-0 rounded bg-white" />
+                            : <div className="w-10 h-10 bg-dk-3 rounded flex-shrink-0" />
+                          }
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-dk-5 truncate">{s.name}</p>
+                            <p className="text-xs text-dk-5/60">{s.set_num}{s.year ? ` · ${s.year}` : ''}{s.pieces ? ` · ${s.pieces} pcs` : ''}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Selected set header */}
+                  <div className="flex items-center gap-3 mb-3 p-3 bg-dk-1 border border-dk-3 rounded">
+                    {selectedSet.image_url && (
+                      <img src={selectedSet.image_url} alt="" className="w-12 h-12 object-contain rounded bg-white flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-dk-5 truncate">{selectedSet.name}</p>
+                      <p className="text-xs text-dk-5/60">{selectedSet.set_num}</p>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      {setPartsData.length > 0 && (
+                        <button
+                          onClick={importAllSetParts}
+                          disabled={importingAll}
+                          className="px-3 py-1.5 text-xs bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50 font-semibold"
+                        >
+                          {importingAll ? 'Importing…' : `Import all (${setPartsData.length})`}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setSelectedSet(null); setSetPartsData([]) }}
+                        className="px-3 py-1.5 text-xs border border-dk-3 rounded text-dk-5 hover:bg-dk-3"
+                      >
+                        ← Back
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Parts from the set */}
+                  {loadingSetParts ? (
+                    <p className="text-sm text-dk-5/60 py-4 text-center">Loading parts…</p>
+                  ) : setPartsData.length === 0 ? (
+                    <p className="text-sm text-dk-5/60 py-4 text-center">No parts found for this set.</p>
+                  ) : (
+                    <div className="border border-dk-3 rounded bg-dk-1 max-h-72 overflow-y-auto">
+                      {setPartsData.map((p, idx) => {
+                        const ldrawId = p.ldraw_id || p.part_num
+                        return (
+                          <div key={`${ldrawId}-${idx}`} className="flex items-center gap-3 px-3 py-2 hover:bg-dk-2 border-b border-dk-3 last:border-0">
+                            <img
+                              src={getPartPreviewUrl(ldrawId, p.color_rgb, 64)}
+                              alt=""
+                              className="w-9 h-9 object-contain flex-shrink-0"
+                              onError={(e) => { e.target.style.display = 'none' }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className="font-mono text-sm text-dk-5">{ldrawId}</span>
+                              {p.name && <span className="ml-2 text-xs text-dk-5/70 truncate">{p.name}</span>}
+                              {p.color && <span className="ml-2 text-xs text-dk-5/50">· {p.color}</span>}
+                            </div>
+                            <span className="text-xs text-dk-5/50 mr-2">×{p.quantity}</span>
+                            <button
+                              onClick={() => addSetPart(p)}
+                              disabled={addingPartNum === ldrawId}
+                              className="px-3 py-1 text-xs bg-mint text-dk-1 rounded hover:opacity-90 disabled:opacity-50 flex-shrink-0"
+                            >
+                              {addingPartNum === ldrawId ? 'Adding…' : '+ Add'}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {/* Current parts list */}
           {customParts.length === 0 ? (
-            <EmptyState message="No parts yet. Search above to add parts to this project." />
+            <EmptyState message="No parts yet. Search above or import from a Rebrickable set." />
           ) : (
             <div className="space-y-2">
               {customParts.map((p) => (
                 <div key={p.id} className="flex items-center gap-3 p-3 bg-dk-1 rounded border border-dk-3">
                   <img
-                    src={`/api/parts/preview/${encodeURIComponent(p.part_num)}?size=64`}
+                    src={getPartPreviewUrl(p.part_num, null, 64)}
                     alt=""
                     className="w-10 h-10 object-contain rounded flex-shrink-0"
                     onError={(e) => { e.target.style.display = 'none' }}
@@ -773,7 +1005,7 @@ apiFetch(`/api/jobs/${jobId}`)
                   className: 'w-20',
                   render: (p) => (
                     <img
-                      src={`/api/parts/preview/${encodeURIComponent(p.ldraw_id || p.part_num)}?size=128${p.color_rgb ? `&color=${encodeURIComponent(p.color_rgb)}` : ''}`}
+                      src={getPartPreviewUrl(p.ldraw_id || p.part_num, p.color_rgb, 128)}
                       alt=""
                       className="w-12 h-12 object-contain bg-dk-1 rounded"
                       onError={(e) => { e.target.style.display = 'none' }}

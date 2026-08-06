@@ -57,6 +57,30 @@ def start_generation(
     )
 
 
+def start_generation_custom(
+    job_id: str,
+    parts: list,
+    plate_width: int,
+    plate_depth: int,
+    plate_height: int,
+    bypass_cache: bool = False,
+    generate_3mf: bool = True,
+    generate_stl: bool = True,
+) -> None:
+    """Run process_generation_custom in a background thread (custom project with pre-selected parts)."""
+    run_async_in_background_thread(
+        process_generation_custom,
+        job_id,
+        parts,
+        plate_width,
+        plate_depth,
+        plate_height,
+        bypass_cache,
+        generate_3mf,
+        generate_stl,
+    )
+
+
 async def process_generation(
     job_id: str,
     set_num: str,
@@ -390,6 +414,314 @@ async def process_generation(
             db.commit()
         remove_job_progress(job_id)
     
+    finally:
+        remove_job_progress(job_id)
+        db.close()
+
+
+async def process_generation_custom(
+    job_id: str,
+    parts: list,
+    plate_width: int,
+    plate_depth: int,
+    plate_height: int,
+    bypass_cache: bool = False,
+    generate_3mf: bool = True,
+    generate_stl: bool = True,
+):
+    """Background task to generate output for a custom project using a pre-supplied parts list.
+
+    The ``parts`` argument is a list of dicts with keys:
+      part_num, ldraw_id, quantity, color, color_rgb, is_spare.
+    Processing mirrors process_generation() but skips the Rebrickable API call.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(
+        f"sqlite:///{settings.database_path}",
+        connect_args={"check_same_thread": False}
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    job_log = []
+
+    def _is_job_cancelled() -> bool:
+        j = db.query(Job).filter(Job.id == job_id).first()
+        return j is not None and getattr(j, "status", None) == "cancelled"
+
+    def _exit_if_cancelled() -> bool:
+        if _is_job_cancelled():
+            remove_job_progress(job_id)
+            db.close()
+            return True
+        return False
+
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            logger.error(f"Job {job_id} not found")
+            return
+        job.status = "processing"
+        job.progress = 0
+        db.commit()
+        if _exit_if_cancelled():
+            return
+
+        job_log.append("Checking LDraw library...")
+        set_job_progress(job_id, status="processing", progress=5, log="\n".join(job_log))
+
+        ldraw_manager = LDrawManager()
+        if not await ldraw_manager.ensure_library_exists():
+            log_str = "\n".join(job_log)
+            set_job_progress(job_id, status="failed", error_message="Failed to download LDraw library", log=log_str)
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = "Failed to download LDraw library"
+                job.log = log_str
+                db.commit()
+            remove_job_progress(job_id)
+            return
+        if _exit_if_cancelled():
+            return
+
+        job_log.append("Using custom parts list...")
+        set_job_progress(job_id, progress=10, log="\n".join(job_log))
+
+        if not parts:
+            log_str = "\n".join(job_log)
+            set_job_progress(job_id, status="failed", error_message="No parts in custom project", log=log_str)
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = "No parts in custom project"
+                job.log = log_str
+                db.commit()
+            remove_job_progress(job_id)
+            return
+
+        # Read per-part and global rotation / scale from job settings
+        try:
+            s = json.loads(job.settings) if job.settings else {}
+            per_part_rotation = s.get("per_part_rotation") or {}
+            scale_factor = s.get("scale_factor")
+            if scale_factor is None:
+                scale_factor = settings.stl_scale_factor
+            rot_enabled = s.get("rotation_enabled")
+            if rot_enabled is None:
+                rot_enabled = settings.rotation_enabled
+            rx = s.get("rotation_x", settings.rotation_x)
+            ry = s.get("rotation_y", settings.rotation_y)
+            rz = s.get("rotation_z", settings.rotation_z)
+        except Exception:
+            per_part_rotation = {}
+            scale_factor = settings.stl_scale_factor
+            rot_enabled = settings.rotation_enabled
+            rx, ry, rz = settings.rotation_x, settings.rotation_y, settings.rotation_z
+
+        scale_factor = float(scale_factor)
+        scale_factor_backend = scale_factor * 10.0
+        sync_config_from_db(db)
+        db.commit()
+
+        converter = STLConverter()
+        stl_files = []
+        converted_count = 0
+        total_parts = len(parts)
+        total_instances = sum(p.get("quantity", 1) for p in parts)
+
+        for part_index, part in enumerate(parts):
+            if _exit_if_cancelled():
+                return
+            ldraw_id = part.get("ldraw_id") or part.get("part_num")
+            quantity = part.get("quantity", 1)
+
+            job_log.append(f"Converting part {part_index + 1}/{total_parts}: {ldraw_id}")
+
+            if not ldraw_id:
+                job_log.append(f"No LDraw ID for part, skipping")
+                continue
+
+            pr = per_part_rotation.get(ldraw_id)
+            if pr is not None and isinstance(pr, dict):
+                use_rot = True
+                px = float(pr.get("x", 0))
+                py = float(pr.get("y", 0))
+                pz = float(pr.get("z", 0))
+            elif rot_enabled:
+                use_rot = True
+                px, py, pz = rx, ry, rz
+            elif getattr(settings, "default_orientation_match_preview", True):
+                use_rot = True
+                px, py, pz = -90.0, 0.0, 0.0
+            else:
+                use_rot = False
+                px, py, pz = 0.0, 0.0, 0.0
+
+            stl_path = converter.get_or_convert_stl(
+                ldraw_id,
+                bypass_cache=bypass_cache,
+                scale_factor=scale_factor_backend,
+                rotation_enabled=use_rot,
+                rotation_x=px, rotation_y=py, rotation_z=pz,
+                db=db,
+            )
+
+            if stl_path and stl_path.exists():
+                color_rgb = part.get("color_rgb")
+                for _ in range(quantity):
+                    stl_files.append((stl_path, ldraw_id, color_rgb))
+                    converted_count += 1
+            else:
+                line = f"Failed to convert {ldraw_id} to STL"
+                logger.warning(line)
+                job_log.append(line)
+
+            progress = 20 + int((converted_count / total_instances) * 50) if total_instances else 20
+            set_job_progress(job_id, progress=min(progress, 70), log="\n".join(job_log))
+            db.commit()
+
+        if not stl_files:
+            log_str = "\n".join(job_log)
+            set_job_progress(job_id, status="failed", error_message="No parts could be converted to STL", log=log_str)
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = "No parts could be converted to STL"
+                job.log = log_str
+                db.commit()
+            remove_job_progress(job_id)
+            return
+        if _exit_if_cancelled():
+            return
+
+        job_log.append("Building output (3MF / ZIP)...")
+        set_job_progress(job_id, progress=75, log="\n".join(job_log))
+
+        output_filename = None
+        need_zip = generate_stl or (generate_3mf and generate_stl)
+        threemf_path = settings.output_dir / f"{job_id}.3mf"
+
+        if generate_3mf:
+            if _exit_if_cancelled():
+                return
+            job_log.append("Generating 3MF...")
+            set_job_progress(job_id, progress=80, log="\n".join(job_log))
+            try:
+                unique_parts = {}
+                for stl_path, ldraw_id, color_rgb in stl_files:
+                    if stl_path not in unique_parts:
+                        unique_parts[stl_path] = {"ldraw_id": ldraw_id, "quantity": 0, "color_rgb": color_rgb}
+                    unique_parts[stl_path]["quantity"] += 1
+                parts_for_3mf = [
+                    (path, info["ldraw_id"], info["quantity"], info.get("color_rgb"))
+                    for path, info in unique_parts.items()
+                ]
+                threemf_gen = ThreeMFGenerator(part_spacing=settings.part_spacing)
+                if not threemf_gen.generate_3mf(parts_for_3mf, plate_width, plate_depth, plate_height, threemf_path):
+                    raise RuntimeError("3MF generation returned False")
+            except Exception as e:
+                logger.error(f"Job {job_id}: 3MF generation error: {e}")
+                if not generate_stl:
+                    log_str = "\n".join(job_log)
+                    set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+                    job = db.query(Job).filter(Job.id == job_id).first()
+                    if job:
+                        job.status = "failed"
+                        job.error_message = str(e)
+                        job.log = log_str
+                        db.commit()
+                    remove_job_progress(job_id)
+                    return
+                generate_3mf = False
+
+        if need_zip:
+            if _exit_if_cancelled():
+                return
+            num_files = (1 if (generate_3mf and threemf_path.exists()) else 0) + (len(stl_files) if generate_stl else 0)
+            total_bytes = 0
+            if generate_3mf and threemf_path.exists():
+                total_bytes += threemf_path.stat().st_size
+            for stl_path, _, _ in stl_files:
+                if stl_path.exists():
+                    total_bytes += stl_path.stat().st_size
+            size_mb = total_bytes / (1024 * 1024)
+            size_str = f"{size_mb:.1f} MB" if size_mb >= 0.01 else f"{total_bytes} B"
+            job_log.append(f"Creating ZIP: {num_files} files ({size_str})...")
+            set_job_progress(job_id, progress=82, log="\n".join(job_log))
+            zip_filename = f"{job_id}.zip"
+            zip_path = settings.output_dir / zip_filename
+            try:
+                with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                    if generate_3mf and threemf_path.exists():
+                        zipf.write(threemf_path, f"{job_id}.3mf")
+                    if generate_stl:
+                        part_counts = {}
+                        for stl_path, ldraw_id, _ in stl_files:
+                            if ldraw_id not in part_counts:
+                                part_counts[ldraw_id] = 0
+                            part_counts[ldraw_id] += 1
+                            zip_name = f"stls/{ldraw_id}_{part_counts[ldraw_id]}.stl"
+                            zipf.write(stl_path, zip_name)
+                output_filename = zip_filename
+                if generate_3mf and threemf_path.exists():
+                    try:
+                        threemf_path.unlink()
+                    except OSError:
+                        pass
+                zip_size = zip_path.stat().st_size
+                zip_mb = zip_size / (1024 * 1024)
+                zip_size_str = f"{zip_mb:.1f} MB" if zip_mb >= 0.01 else f"{zip_size} B"
+                if total_bytes > 0:
+                    reduction = (1 - zip_size / total_bytes) * 100
+                    job_log.append(f"ZIP created: {zip_size_str} ({reduction:.0f}% reduction)")
+                else:
+                    job_log.append(f"ZIP created: {zip_size_str}")
+                set_job_progress(job_id, progress=90, log="\n".join(job_log))
+            except Exception as e:
+                logger.error(f"Job {job_id}: Failed to create ZIP: {e}")
+                log_str = "\n".join(job_log)
+                set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+                job = db.query(Job).filter(Job.id == job_id).first()
+                if job:
+                    job.status = "failed"
+                    job.error_message = str(e)
+                    job.log = log_str
+                    db.commit()
+                remove_job_progress(job_id)
+                return
+        else:
+            output_filename = f"{job_id}.3mf"
+
+        job_log.append("Finalizing...")
+        set_job_progress(job_id, progress=95, log="\n".join(job_log))
+
+        if _exit_if_cancelled():
+            return
+        log_str = "\n".join(job_log)
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.status = "completed"
+            job.progress = 100
+            job.output_file = output_filename
+            job.log = log_str
+            db.commit()
+        set_job_progress(job_id, status="completed", progress=100, log=log_str)
+        logger.info(f"Job {job_id}: Custom project completed with {output_filename}")
+
+    except Exception as e:
+        logger.error(f"Job {job_id} (custom) failed: {e}", exc_info=True)
+        log_str = "\n".join(job_log)
+        set_job_progress(job_id, status="failed", error_message=str(e), log=log_str)
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error_message = str(e)
+            job.log = log_str
+            db.commit()
+        remove_job_progress(job_id)
+
     finally:
         remove_job_progress(job_id)
         db.close()

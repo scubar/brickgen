@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.config import settings
 from backend.database import init_db
-from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts, auth
+from backend.api.routes import search, generate, download, settings as settings_routes, projects, parts, auth, ldraw_parts
 from backend.core.job_progress import broadcast_progress_task
 from backend.auth import get_current_user
 from backend.version import __version__
@@ -129,6 +129,7 @@ app.include_router(download.router, prefix=settings.api_prefix, tags=["download"
 app.include_router(settings_routes.router, prefix=settings.api_prefix, tags=["settings"])
 app.include_router(projects.router, prefix=settings.api_prefix, tags=["projects"])
 app.include_router(parts.router, prefix=settings.api_prefix, tags=["parts"])
+app.include_router(ldraw_parts.router, prefix=settings.api_prefix, tags=["ldraw-parts"])
 
 @app.get(f"{settings.api_prefix}/version")
 async def get_version():
